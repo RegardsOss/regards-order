@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
+ * Copyright 2017-2020 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
  *
  * This file is part of REGARDS.
  *
@@ -43,11 +43,6 @@ import fr.cnes.regards.modules.order.domain.exception.NotYetAvailableException;
 @RestControllerAdvice(annotations = RestController.class)
 @Order(0)
 public class OrderControllerAdvice {
-
-    @ExceptionHandler(EmptyBasketException.class)
-    public ResponseEntity<ServerErrorResponse> handleEmptyBasketException(EmptyBasketException ebe) {
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).body(new ServerErrorResponse(ebe.getMessage(), ebe));
-    }
 
     @ExceptionHandler(EmptySelectionException.class)
     public ResponseEntity<ServerErrorResponse> handleEmptySelectionException(EmptySelectionException ebe) {

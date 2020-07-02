@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
+ * Copyright 2017-2020 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
  *
  * This file is part of REGARDS.
  *
@@ -31,7 +31,6 @@ import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -63,6 +62,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.hateoas.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -101,6 +101,7 @@ import fr.cnes.regards.modules.emails.client.IEmailClient;
 import fr.cnes.regards.modules.indexer.domain.DataFile;
 import fr.cnes.regards.modules.order.dao.IBasketRepository;
 import fr.cnes.regards.modules.order.dao.IOrderRepository;
+import fr.cnes.regards.modules.order.dao.OrderSpecifications;
 import fr.cnes.regards.modules.order.domain.DatasetTask;
 import fr.cnes.regards.modules.order.domain.FileState;
 import fr.cnes.regards.modules.order.domain.FilesTask;
@@ -119,15 +120,16 @@ import fr.cnes.regards.modules.order.metalink.schema.FilesType;
 import fr.cnes.regards.modules.order.metalink.schema.MetalinkType;
 import fr.cnes.regards.modules.order.metalink.schema.ObjectFactory;
 import fr.cnes.regards.modules.order.metalink.schema.ResourcesType;
-import fr.cnes.regards.modules.order.service.job.ExpirationDateJobParameter;
 import fr.cnes.regards.modules.order.service.job.FilesJobParameter;
+import fr.cnes.regards.modules.order.service.job.StorageFilesJob;
+import fr.cnes.regards.modules.order.service.job.SubOrderAvailabilityPeriodJobParameter;
 import fr.cnes.regards.modules.order.service.job.UserJobParameter;
 import fr.cnes.regards.modules.order.service.job.UserRoleJobParameter;
 import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
 import fr.cnes.regards.modules.project.domain.Project;
 import fr.cnes.regards.modules.search.client.IComplexSearchClient;
 import fr.cnes.regards.modules.search.domain.plugin.legacy.FacettedPagedResources;
-import fr.cnes.regards.modules.storage.client.IAipClient;
+import fr.cnes.regards.modules.storage.client.IStorageRestClient;
 import fr.cnes.regards.modules.templates.service.TemplateService;
 import freemarker.template.TemplateException;
 
@@ -148,6 +150,8 @@ public class OrderService implements IOrderService {
 
     private static final int MAX_EXTERNAL_BUCKET_FILE_COUNT = 1_000;
 
+    private final Set<String> noProxyHosts = Sets.newHashSet();
+
     @Autowired
     private IOrderRepository repos;
 
@@ -167,9 +171,6 @@ public class OrderService implements IOrderService {
     private IComplexSearchClient searchClient;
 
     @Autowired
-    private IAipClient aipClient;
-
-    @Autowired
     private IAuthenticationResolver authResolver;
 
     @Autowired
@@ -180,6 +181,9 @@ public class OrderService implements IOrderService {
 
     @Autowired
     private IProjectsClient projectClient;
+
+    @Autowired
+    private IStorageRestClient storageClient;
 
     @Autowired
     private IRuntimeTenantResolver runtimeTenantResolver;
@@ -225,8 +229,6 @@ public class OrderService implements IOrderService {
 
     private Proxy proxy;
 
-    private final Set<String> noProxyHosts = Sets.newHashSet();
-
     // Storage bucket size in bytes
     private Long storageBucketSize = null;
 
@@ -257,10 +259,10 @@ public class OrderService implements IOrderService {
         LOGGER.info("Creating order with owner {}", basket.getOwner());
         Order order = new Order();
         order.setCreationDate(OffsetDateTime.now());
-        order.setExpirationDate(order.getCreationDate().plus(orderValidationPeriodDays, ChronoUnit.DAYS));
         order.setOwner(basket.getOwner());
         order.setFrontendUrl(url);
         order.setStatus(OrderStatus.PENDING);
+        // expiration date is set during asyncCompleteOrderCreation execution
         // To generate orderId
         order = repos.save(order);
         // Asynchronous operation
@@ -286,6 +288,8 @@ public class OrderService implements IOrderService {
 
             // Count of files managed by Storage (internal)
             int internalFilesCount = 0;
+            // Count number of subOrder created to compute expiration date
+            int subOrderNumber = 0;
             // External files count
             int externalFilesCount = 0;
             // Dataset selections
@@ -311,6 +315,7 @@ public class OrderService implements IOrderService {
                             // Create all bucket data files at once
                             dataFileService.create(storageBucketFiles);
                             createStorageSubOrder(basket, dsTask, storageBucketFiles, order, role, priority);
+                            subOrderNumber++;
                             storageBucketFiles.clear();
                         }
                         // If external bucket files count > MAX_EXTERNAL_BUCKET_FILE_COUNT, add a new bucket
@@ -331,6 +336,7 @@ public class OrderService implements IOrderService {
                     // Create all bucket data files at once
                     dataFileService.create(storageBucketFiles);
                     createStorageSubOrder(basket, dsTask, storageBucketFiles, order, role, priority);
+                    subOrderNumber++;
                 }
                 if (!externalBucketFiles.isEmpty()) {
                     externalFilesCount += externalBucketFiles.size();
@@ -344,6 +350,9 @@ public class OrderService implements IOrderService {
                     order.addDatasetOrderTask(dsTask);
                 }
             }
+            // Compute order expiration date using number of sub order created + 2,
+            // that gives time to users to download there last suborders
+            order.setExpirationDate(OffsetDateTime.now().plusDays((subOrderNumber + 2) * orderValidationPeriodDays));
             // In case order contains only external files, percent completion can be set to 100%, else completion is
             // computed when files are available (even if some external files exist, this case will not (often) occur
             if ((internalFilesCount == 0) && (externalFilesCount > 0)) {
@@ -358,6 +367,7 @@ public class OrderService implements IOrderService {
         } catch (Exception e) {
             LOGGER.error("Error while completing order creation", e);
             order.setStatus(OrderStatus.FAILED);
+            order.setExpirationDate(OffsetDateTime.now().plusDays(orderValidationPeriodDays));
         }
         // Be careful to not unset FAILED status
         if (order.getStatus() != OrderStatus.FAILED) {
@@ -496,7 +506,6 @@ public class OrderService implements IOrderService {
     private void createStorageSubOrder(Basket basket, DatasetTask dsTask, Set<OrderDataFile> bucketFiles, Order order,
             String role, int priority) {
         LOGGER.info("Creating storage sub-order of {} files", bucketFiles.size());
-        OffsetDateTime expirationDate = order.getExpirationDate();
         FilesTask currentFilesTask = new FilesTask();
         currentFilesTask.setOrderId(order.getId());
         currentFilesTask.setOwner(order.getOwner());
@@ -505,10 +514,10 @@ public class OrderService implements IOrderService {
         // storageJobInfo is pointed by currentFilesTask so it must be locked to avoid being cleaned before FilesTask
         JobInfo storageJobInfo = new JobInfo(true);
         storageJobInfo.setParameters(new FilesJobParameter(bucketFiles.toArray(new OrderDataFile[bucketFiles.size()])),
-                                     new ExpirationDateJobParameter(expirationDate),
+                                     new SubOrderAvailabilityPeriodJobParameter(orderValidationPeriodDays),
                                      new UserJobParameter(order.getOwner()), new UserRoleJobParameter(role));
         storageJobInfo.setOwner(basket.getOwner());
-        storageJobInfo.setClassName("fr.cnes.regards.modules.order.service.job.StorageFilesJob");
+        storageJobInfo.setClassName(StorageFilesJob.class.getName());
         storageJobInfo.setPriority(priority);
         storageJobInfo.setExpirationDate(order.getExpirationDate());
         // Create JobInfo and associate to FilesTask
@@ -619,7 +628,8 @@ public class OrderService implements IOrderService {
         return (order.getDatasetTasks().stream().flatMap(dsTask -> dsTask.getReliantTasks().stream())
                 .filter(ft -> ft.getJobInfo() != null).count() == 0)
                 || order.getDatasetTasks().stream().flatMap(dsTask -> dsTask.getReliantTasks().stream())
-                        .map(ft -> ft.getJobInfo().getStatus().getStatus()).allMatch(JobStatus::isFinished);
+                        .filter(ft -> ft.getJobInfo() != null).map(ft -> ft.getJobInfo().getStatus().getStatus())
+                        .allMatch(JobStatus::isFinished);
     }
 
     @Override
@@ -663,8 +673,10 @@ public class OrderService implements IOrderService {
     }
 
     @Override
-    public void writeAllOrdersInCsv(BufferedWriter writer) throws IOException {
-        List<Order> orders = repos.findAll();
+    public void writeAllOrdersInCsv(BufferedWriter writer, OrderStatus status, OffsetDateTime from, OffsetDateTime to)
+            throws IOException {
+        List<Order> orders = repos.findAll(OrderSpecifications.search(status, from, to),
+                                           Sort.by(Sort.Direction.ASC, "id"));
         writer.append("ORDER_ID;CREATION_DATE;EXPIRATION_DATE;OWNER;STATUS;STATUS_DATE;PERCENT_COMPLETE;FILES_IN_ERROR");
         writer.newLine();
         for (Order order : orders) {
@@ -720,20 +732,25 @@ public class OrderService implements IOrderService {
                         dataFile.setDownloadError("Error while downloading external file\n" + sw.toString());
                         downloadErrorFiles.add(dataFile);
                         i.remove();
-                        continue;
                     }
                 } else { // Managed by Storage
                     String aip = dataFile.getIpId().toString();
                     dataFile.setDownloadError(null);
                     Response response = null;
                     try {
-                        response = aipClient.downloadFile(aip, dataFile.getChecksum());
+                        FeignSecurityManager.asSystem();
+                        // To download through storage client we must be authentify as system.
+                        // To download file with accessrights checked, we should use catalogDownloadClient
+                        // but the accessRight have already been checked here.
+                        response = storageClient.downloadFile(dataFile.getChecksum());
                     } catch (RuntimeException e) {
                         LOGGER.error("Error while downloading file from Archival Storage", e);
                         StringWriter sw = new StringWriter();
                         e.printStackTrace(new PrintWriter(sw));
                         dataFile.setDownloadError("Error while downloading file from Archival Storage\n"
                                 + sw.toString());
+                    } finally {
+                        FeignSecurityManager.reset();
                     }
                     // Unable to download file from storage
                     if ((response == null) || (response.status() != HttpStatus.OK.value())) {
@@ -743,7 +760,6 @@ public class OrderService implements IOrderService {
                                     dataFile.getChecksum());
                         dataFile.setDownloadError("Cannot retrieve data file from storage, feign downloadFile method returns "
                                 + (response == null ? "null" : response.toString()));
-                        continue;
                     } else { // Download ok
                         try (InputStream is = response.body().asInputStream()) {
                             readInputStreamAndAddToZip(downloadErrorFiles, zos, dataFiles, i, dataFile, aip, is);
@@ -1012,6 +1028,15 @@ public class OrderService implements IOrderService {
         order.setWaitingForUser(false);
         // Order is already at EXPIRED state so let it be
         repos.save(order);
+    }
+
+    @Override
+    public boolean isPaused(Long orderId) {
+        Order order = loadComplete(orderId);
+        if (order.getStatus() != OrderStatus.PAUSED) {
+            return false;
+        }
+        return this.orderEffectivelyInPause(order);
     }
 
 }

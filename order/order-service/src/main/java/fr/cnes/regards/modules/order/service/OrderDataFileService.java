@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
+ * Copyright 2017-2020 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
  *
  * This file is part of REGARDS.
  *
@@ -50,6 +50,7 @@ import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
 
 import feign.Response;
+import fr.cnes.regards.framework.feign.security.FeignSecurityManager;
 import fr.cnes.regards.framework.jpa.multitenant.transactional.MultitenantTransactional;
 import fr.cnes.regards.framework.oais.urn.UniformResourceName;
 import fr.cnes.regards.framework.utils.file.DownloadUtils;
@@ -62,7 +63,7 @@ import fr.cnes.regards.modules.order.domain.FilesTask;
 import fr.cnes.regards.modules.order.domain.Order;
 import fr.cnes.regards.modules.order.domain.OrderDataFile;
 import fr.cnes.regards.modules.order.domain.OrderStatus;
-import fr.cnes.regards.modules.storage.client.IAipClient;
+import fr.cnes.regards.modules.storage.client.IStorageRestClient;
 
 /**
  * @author oroussel
@@ -77,9 +78,6 @@ public class OrderDataFileService implements IOrderDataFileService {
     private IOrderDataFileRepository repos;
 
     @Autowired
-    private IAipClient aipClient;
-
-    @Autowired
     private IOrderJobService orderJobService;
 
     @Autowired
@@ -90,6 +88,9 @@ public class OrderDataFileService implements IOrderDataFileService {
 
     @Autowired
     private IOrderRepository orderRepository;
+
+    @Autowired
+    private IStorageRestClient storageClient;
 
     @Value("${http.proxy.host:#{null}}")
     private String proxyHost;
@@ -125,8 +126,8 @@ public class OrderDataFileService implements IOrderDataFileService {
         FilesTask filesTask = filesTasksRepository.findDistinctByFilesIn(dataFile);
         // In case FilesTask does not yet exist
         if (filesTask != null) {
-            if (filesTask.getFiles().stream().allMatch(f -> f.getState() == FileState.DOWNLOADED
-                    || f.getState() == FileState.ERROR || f.getState() == FileState.DOWNLOAD_ERROR)) {
+            if (filesTask.getFiles().stream().allMatch(f -> (f.getState() == FileState.DOWNLOADED)
+                    || (f.getState() == FileState.ERROR) || (f.getState() == FileState.DOWNLOAD_ERROR))) {
                 filesTask.setEnded(true);
             }
             // ...and if it is waiting for user
@@ -149,8 +150,8 @@ public class OrderDataFileService implements IOrderDataFileService {
         Long orderId = null;
         // Update all these FileTasks
         for (FilesTask filesTask : filesTasks) {
-            if (filesTask.getFiles().stream().allMatch(f -> f.getState() == FileState.DOWNLOADED
-                    || f.getState() == FileState.ERROR || f.getState() == FileState.DOWNLOAD_ERROR)) {
+            if (filesTask.getFiles().stream().allMatch(f -> (f.getState() == FileState.DOWNLOADED)
+                    || (f.getState() == FileState.ERROR) || (f.getState() == FileState.DOWNLOAD_ERROR))) {
                 filesTask.setEnded(true);
             }
             // Save order id for later
@@ -214,14 +215,17 @@ public class OrderDataFileService implements IOrderDataFileService {
             }
         } else {
             try {
-                response = aipClient.downloadFile(dataFile.getIpId().toString(), dataFile.getChecksum());
+                FeignSecurityManager.asSystem();
+                response = storageClient.downloadFile(dataFile.getChecksum());
             } catch (RuntimeException e) {
                 LOGGER.error("Error while downloading file from Archival Storage", e);
                 StringWriter sw = new StringWriter();
                 e.printStackTrace(new PrintWriter(sw));
                 dataFile.setDownloadError("Error while downloading file from Archival Storage\n" + sw.toString());
+            } finally {
+                FeignSecurityManager.reset();
             }
-            error = response == null || response.status() != HttpStatus.OK.value();
+            error = (response == null) || (response.status() != HttpStatus.OK.value());
             if (!error) {
                 try (InputStream is = response.body().asInputStream()) {
                     long copiedBytes = ByteStreams.copy(is, os);

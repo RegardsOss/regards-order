@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
+ * Copyright 2017-2020 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
  *
  * This file is part of REGARDS.
  *
@@ -44,7 +44,7 @@ import fr.cnes.regards.modules.indexer.domain.summary.DocFilesSummary;
 import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
 import fr.cnes.regards.modules.search.client.IComplexSearchClient;
 import fr.cnes.regards.modules.search.client.ILegacySearchEngineClient;
-import fr.cnes.regards.modules.storage.client.IAipClient;
+import fr.cnes.regards.modules.storage.client.IStorageRestClient;
 
 /**
  * @author oroussel
@@ -83,8 +83,8 @@ public class OrderConfiguration {
     }
 
     @Bean
-    public IAipClient aipClient() {
-        AipClientProxy aipClientProxy = new AipClientProxy();
+    public IStorageRestClient storageRestClient() {
+        IStorageRestClientProxy aipClientProxy = new IStorageRestClientProxy();
         InvocationHandler handler = (proxy, method, args) -> {
             for (Method aipClientProxyMethod : aipClientProxy.getClass().getMethods()) {
                 if (aipClientProxyMethod.getName().equals(method.getName())) {
@@ -93,16 +93,16 @@ public class OrderConfiguration {
             }
             return null;
         };
-        return (IAipClient) Proxy.newProxyInstance(IAipClient.class.getClassLoader(),
-                                                   new Class<?>[] { IAipClient.class }, handler);
+        return (IStorageRestClient) Proxy.newProxyInstance(IStorageRestClient.class.getClassLoader(),
+                                                           new Class<?>[] { IStorageRestClient.class }, handler);
     }
 
-    private class AipClientProxy {
+    private class IStorageRestClientProxy {
 
         Map<String, Collection<String>> headers = new HashMap<>();
 
         @SuppressWarnings("unused")
-        public Response downloadFile(String aipId, String checksum) {
+        public Response downloadFile(String checksum) {
             return Response.builder().status(200).headers(headers)
                     .request(Request.create(feign.Request.HttpMethod.GET, "", Maps.newHashMap(), null))
                     .body(getClass().getResourceAsStream("/files/" + checksum), 1000).build();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
+ * Copyright 2017-2020 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
  *
  * This file is part of REGARDS.
  *
@@ -48,6 +48,7 @@ import com.google.common.base.Strings;
 import com.google.common.net.HttpHeaders;
 
 import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
+import fr.cnes.regards.framework.gson.adapters.OffsetDateTimeAdapter;
 import fr.cnes.regards.framework.hateoas.IResourceController;
 import fr.cnes.regards.framework.hateoas.IResourceService;
 import fr.cnes.regards.framework.module.rest.exception.EntityNotFoundException;
@@ -79,26 +80,25 @@ import io.jsonwebtoken.MalformedJwtException;
 @RequestMapping("")
 public class OrderController implements IResourceController<OrderDto> {
 
-    @Autowired
-    private IResourceService resourceService;
+    public static class OrderRequest {
 
-    @Autowired
-    private IBasketService basketService;
+        private String onSuccessUrl;
 
-    @Autowired
-    private IOrderService orderService;
+        public OrderRequest() {
+        }
 
-    @Autowired
-    private IOrderDataFileService dataFileService;
+        public OrderRequest(String onSuccessUrl) {
+            this.onSuccessUrl = onSuccessUrl;
+        }
 
-    @Autowired
-    private JWTService jwtService;
+        public String getOnSuccessUrl() {
+            return onSuccessUrl;
+        }
 
-    @Autowired
-    private IAuthenticationResolver authResolver;
-
-    @Autowired
-    private PagedResourcesAssembler<OrderDto> orderDtoPagedResourcesAssembler;
+        public void setOnSuccessUrl(String onSuccessUrl) {
+            this.onSuccessUrl = onSuccessUrl;
+        }
+    }
 
     public static final String ADMIN_ROOT_PATH = "/orders";
 
@@ -122,6 +122,27 @@ public class OrderController implements IResourceController<OrderDto> {
 
     public static final String PUBLIC_METALINK_DOWNLOAD_PATH = USER_ROOT_PATH + "/metalink/download";
 
+    @Autowired
+    private IResourceService resourceService;
+
+    @Autowired
+    private IBasketService basketService;
+
+    @Autowired
+    private IOrderService orderService;
+
+    @Autowired
+    private IOrderDataFileService dataFileService;
+
+    @Autowired
+    private JWTService jwtService;
+
+    @Autowired
+    private IAuthenticationResolver authResolver;
+
+    @Autowired
+    private PagedResourcesAssembler<OrderDto> orderDtoPagedResourcesAssembler;
+
     @Value("${regards.order.secret}")
     private String secret;
 
@@ -129,12 +150,17 @@ public class OrderController implements IResourceController<OrderDto> {
             role = DefaultRole.REGISTERED_USER)
     @RequestMapping(method = RequestMethod.POST, path = USER_ROOT_PATH)
     public ResponseEntity<Resource<OrderDto>> createOrder(@RequestBody OrderRequest orderRequest)
-            throws EmptyBasketException, IllegalStateException {
-        String user = authResolver.getUser();
-        Basket basket = basketService.find(user);
+            throws IllegalStateException {
+        try {
+            String user = authResolver.getUser();
+            Basket basket = basketService.find(user);
 
-        Order order = orderService.createOrder(basket, orderRequest.getOnSuccessUrl());
-        return new ResponseEntity<>(toResource(OrderDto.fromOrder(order)), HttpStatus.CREATED);
+            Order order = orderService.createOrder(basket, orderRequest.getOnSuccessUrl());
+            return new ResponseEntity<>(toResource(OrderDto.fromOrder(order)), HttpStatus.CREATED);
+        } catch (EmptyBasketException e) {
+            // This not an error case
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        }
     }
 
     @ResourceAccess(description = "Retrieve specified order", role = DefaultRole.REGISTERED_USER)
@@ -176,23 +202,26 @@ public class OrderController implements IResourceController<OrderDto> {
         return new ResponseEntity<>(HttpStatus.OK);
     }
 
-    @ResourceAccess(description = "Find all specified user orders or all users orders",
-            role = DefaultRole.PROJECT_ADMIN)
+    @ResourceAccess(description = "Find all specified user orders or all users orders", role = DefaultRole.EXPLOIT)
     @RequestMapping(method = RequestMethod.GET, path = ADMIN_ROOT_PATH)
     public ResponseEntity<PagedResources<Resource<OrderDto>>> findAll(
             @RequestParam(value = "user", required = false) String user, Pageable pageRequest) {
-        Page<Order> orderPage = (Strings.isNullOrEmpty(user)) ?
-                orderService.findAll(pageRequest) :
-                orderService.findAll(user, pageRequest);
+        Page<Order> orderPage = (Strings.isNullOrEmpty(user)) ? orderService.findAll(pageRequest)
+                : orderService.findAll(user, pageRequest);
         return ResponseEntity.ok(toPagedResources(orderPage.map(OrderDto::fromOrder), orderDtoPagedResourcesAssembler));
     }
 
-    @ResourceAccess(description = "Generate a CSV file with all orders", role = DefaultRole.PROJECT_ADMIN)
+    @ResourceAccess(description = "Generate a CSV file with all orders", role = DefaultRole.EXPLOIT)
     @RequestMapping(method = RequestMethod.GET, path = ADMIN_ROOT_PATH + CSV, produces = "text/csv")
-    public void generateCsv(HttpServletResponse response) throws IOException {
+    public void generateCsv(@RequestParam(name = "status", required = false) OrderStatus status,
+            @RequestParam(name = "from", required = false) String fromParam,
+            @RequestParam(name = "to", required = false) String toParam, HttpServletResponse response)
+            throws IOException {
+        OffsetDateTime from = Strings.isNullOrEmpty(fromParam) ? null : OffsetDateTimeAdapter.parse(fromParam);
+        OffsetDateTime to = Strings.isNullOrEmpty(toParam) ? null : OffsetDateTimeAdapter.parse(toParam);
         response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=orders.csv");
         response.setContentType("text/csv");
-        orderService.writeAllOrdersInCsv(new BufferedWriter(response.getWriter()));
+        orderService.writeAllOrdersInCsv(new BufferedWriter(response.getWriter()), status, from, to);
     }
 
     @ResourceAccess(description = "Find all user current orders", role = DefaultRole.REGISTERED_USER)
@@ -200,8 +229,10 @@ public class OrderController implements IResourceController<OrderDto> {
     public ResponseEntity<PagedResources<Resource<OrderDto>>> findAll(Pageable pageRequest) {
         String user = authResolver.getUser();
         return ResponseEntity.ok(toPagedResources(
-                orderService.findAll(user, pageRequest, OrderStatus.DELETED, OrderStatus.REMOVED)
-                        .map(OrderDto::fromOrder), orderDtoPagedResourcesAssembler));
+                                                  orderService.findAll(user, pageRequest, OrderStatus.DELETED,
+                                                                       OrderStatus.REMOVED)
+                                                          .map(OrderDto::fromOrder),
+                                                  orderDtoPagedResourcesAssembler));
     }
 
     @ResourceAccess(description = "Download a Zip file containing all currently available files",
@@ -224,7 +255,7 @@ public class OrderController implements IResourceController<OrderDto> {
 
         // Stream the response
         return new ResponseEntity<>(os -> orderService.downloadOrderCurrentZip(order.getOwner(), availableFiles, os),
-                                    HttpStatus.OK);
+                HttpStatus.OK);
     }
 
     @ResourceAccess(description = "Download a Metalink file containing all files", role = DefaultRole.REGISTERED_USER)
@@ -265,9 +296,8 @@ public class OrderController implements IResourceController<OrderDto> {
      */
     private ResponseEntity<StreamingResponseBody> createMetalinkDownloadResponse(@PathVariable("orderId") Long orderId,
             HttpServletResponse response) {
-        response.addHeader(HttpHeaders.CONTENT_DISPOSITION,
-                           "attachment;filename=order_" + orderId + "_" + OffsetDateTime.now().toString()
-                                   + ".metalink");
+        response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=order_" + orderId + "_"
+                + OffsetDateTime.now().toString() + ".metalink");
         response.setContentType("application/metalink+xml");
 
         // Stream the response
@@ -277,25 +307,5 @@ public class OrderController implements IResourceController<OrderDto> {
     @Override
     public Resource<OrderDto> toResource(OrderDto order, Object... extras) {
         return resourceService.toResource(order);
-    }
-
-    public static class OrderRequest {
-
-        private String onSuccessUrl;
-
-        public OrderRequest() {
-        }
-
-        public OrderRequest(String onSuccessUrl) {
-            this.onSuccessUrl = onSuccessUrl;
-        }
-
-        public String getOnSuccessUrl() {
-            return onSuccessUrl;
-        }
-
-        public void setOnSuccessUrl(String onSuccessUrl) {
-            this.onSuccessUrl = onSuccessUrl;
-        }
     }
 }

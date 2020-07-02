@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
+ * Copyright 2017-2020 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
  *
  * This file is part of REGARDS.
  *
@@ -21,6 +21,7 @@ package fr.cnes.regards.modules.order.service;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -134,9 +135,13 @@ public interface IOrderService {
     /**
      * Write all orders in CSV format
      * @param writer
+     * @param status
+     * @param from
+     * @param to
      * @throws IOException
      */
-    void writeAllOrdersInCsv(BufferedWriter writer) throws IOException;
+    void writeAllOrdersInCsv(BufferedWriter writer, OrderStatus status, OffsetDateTime from, OffsetDateTime to)
+            throws IOException;
 
     default Page<Order> findAll(int pageSize) {
         return findAll(PageRequest.of(0, pageSize));
@@ -209,4 +214,11 @@ public interface IOrderService {
      * @param order
      */
     void cleanExpiredOrder(Order order);
+
+    /**
+     * Check if the given order is really paused
+     * @param orderId
+     * @return
+     */
+    boolean isPaused(Long orderId);
 }
