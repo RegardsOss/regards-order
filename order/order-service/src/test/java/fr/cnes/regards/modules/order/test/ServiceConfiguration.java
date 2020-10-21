@@ -19,7 +19,6 @@
 package fr.cnes.regards.modules.order.test;
 
 import org.mockito.Mockito;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
@@ -28,10 +27,10 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-import fr.cnes.regards.framework.amqp.IPublisher;
 import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
-import fr.cnes.regards.modules.dam.client.models.IAttributeModelClient;
 import fr.cnes.regards.modules.emails.client.IEmailClient;
+import fr.cnes.regards.modules.model.client.IAttributeModelClient;
+import fr.cnes.regards.modules.model.client.IModelAttrAssocClient;
 import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
 import fr.cnes.regards.modules.search.client.IComplexSearchClient;
 import fr.cnes.regards.modules.search.client.ILegacySearchEngineClient;
@@ -50,9 +49,6 @@ import fr.cnes.regards.modules.storage.client.IStorageRestClient;
 @PropertySource(value = { "classpath:test.properties", "classpath:test_${user.name}.properties" },
         ignoreResourceNotFound = true)
 public class ServiceConfiguration {
-
-    @Autowired
-    private IPublisher publisher;
 
     @Bean
     public IComplexSearchClient mockSearchClient() {
@@ -77,6 +73,11 @@ public class ServiceConfiguration {
     @Bean
     public IAttributeModelClient attributeModelClient() {
         return Mockito.mock(IAttributeModelClient.class);
+    }
+
+    @Bean
+    public IModelAttrAssocClient modelAttrAssocClient() {
+        return Mockito.mock(IModelAttrAssocClient.class);
     }
 
     @Bean
@@ -116,13 +117,13 @@ public class ServiceConfiguration {
     /**
      * TODO : Replace by new storage client
     private class AipClientProxy {
-    
+
         private final IPublisher publisher;
-    
+
         public AipClientProxy(IPublisher publisher) {
             this.publisher = publisher;
         }
-    
+
         @SuppressWarnings("unused")
         public ResponseEntity<AvailabilityResponse> makeFilesAvailable(AvailabilityRequest availabilityRequest) {
             for (String checksum : availabilityRequest.getChecksums()) {
@@ -135,7 +136,7 @@ public class ServiceConfiguration {
             return ResponseEntity.ok(new AvailabilityResponse(Collections.emptySet(), Collections.emptySet(),
                     Collections.emptySet()));
         }
-    
+
         @SuppressWarnings("unused")
         public Response downloadFile(String aipId, String checksum) {
             Response mockResp = Mockito.mock(Response.class);
@@ -147,7 +148,7 @@ public class ServiceConfiguration {
             }
             return mockResp;
         }
-    
+
     }
     */
 

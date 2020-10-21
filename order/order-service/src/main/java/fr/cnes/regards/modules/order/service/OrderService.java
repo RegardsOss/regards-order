@@ -63,10 +63,11 @@ import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.hateoas.Resource;
+import org.springframework.hateoas.EntityModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriUtils;
@@ -128,7 +129,7 @@ import fr.cnes.regards.modules.order.service.job.UserRoleJobParameter;
 import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
 import fr.cnes.regards.modules.project.domain.Project;
 import fr.cnes.regards.modules.search.client.IComplexSearchClient;
-import fr.cnes.regards.modules.search.domain.plugin.legacy.FacettedPagedResources;
+import fr.cnes.regards.modules.search.domain.plugin.legacy.FacettedPagedModel;
 import fr.cnes.regards.modules.storage.client.IStorageRestClient;
 import fr.cnes.regards.modules.templates.service.TemplateService;
 import freemarker.template.TemplateException;
@@ -140,6 +141,7 @@ import freemarker.template.TemplateException;
 @Service
 @MultitenantTransactional
 @RefreshScope
+@EnableScheduling
 public class OrderService implements IOrderService {
 
     public static final int MAX_PAGE_SIZE = 10_000;
@@ -539,12 +541,12 @@ public class OrderService implements IOrderService {
     }
 
     private List<EntityFeature> searchDataObjects(BasketDatasetSelection datasetSelection, int page) {
-        ResponseEntity<FacettedPagedResources<Resource<EntityFeature>>> pagedResourcesResponseEntity = searchClient
+        ResponseEntity<FacettedPagedModel<EntityModel<EntityFeature>>> pagedResourcesResponseEntity = searchClient
                 .searchDataObjects(BasketService.buildSearchRequest(datasetSelection, page, MAX_PAGE_SIZE));
         // It is mandatory to check NOW, at creation instant of order from basket, if data object files are still downloadable
-        Collection<Resource<EntityFeature>> objects = pagedResourcesResponseEntity.getBody().getContent();
+        Collection<EntityModel<EntityFeature>> objects = pagedResourcesResponseEntity.getBody().getContent();
         // If a lot of objects, parallelisation is very useful, if not we don't really care
-        return objects.parallelStream().map(Resource::getContent).collect(Collectors.toList());
+        return objects.parallelStream().map(EntityModel::getContent).collect(Collectors.toList());
     }
 
     @Override

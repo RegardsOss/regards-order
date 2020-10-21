@@ -27,7 +27,7 @@
 	<parent>
 		<groupId>fr.cnes.regards.modules</groupId>
 		<artifactId>order</artifactId>
-		<version>1.0.1</version>
+		<version>1.2.1</version>
 	</parent>
 
 	<dependencies>
@@ -68,6 +68,10 @@
 			<groupId>fr.cnes.regards.modules.dam</groupId>
 			<artifactId>dam-domain</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>fr.cnes.regards.modules.model</groupId>
+  			<artifactId>model-gson-helper</artifactId>
+		</dependency>
 		<!-- To make feign decoding Json properly -->
 		<dependency>
 			<groupId>fr.cnes.regards.modules.dam</groupId>
@@ -76,6 +80,10 @@
 		<dependency>
 			<groupId>fr.cnes.regards.modules.dam</groupId>
 			<artifactId>dam-client</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>fr.cnes.regards.modules.model</groupId>
+			<artifactId>model-client</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>fr.cnes.regards.framework</groupId>
