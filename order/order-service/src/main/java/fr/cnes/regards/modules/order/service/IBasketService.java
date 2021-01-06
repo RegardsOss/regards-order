@@ -18,12 +18,14 @@
  */
 package fr.cnes.regards.modules.order.service;
 
-import java.time.OffsetDateTime;
-
 import fr.cnes.regards.modules.order.domain.basket.Basket;
 import fr.cnes.regards.modules.order.domain.basket.BasketSelectionRequest;
 import fr.cnes.regards.modules.order.domain.exception.EmptyBasketException;
 import fr.cnes.regards.modules.order.domain.exception.EmptySelectionException;
+import fr.cnes.regards.modules.order.domain.process.ProcessDatasetDescription;
+import org.springframework.lang.Nullable;
+
+import java.time.OffsetDateTime;
 
 /**
  * Basket service
@@ -86,4 +88,14 @@ public interface IBasketService {
      * @return updated {@link Basket}
      */
     Basket removeDatedItemsSelection(Basket basket, Long datasetId, OffsetDateTime itemsSelectionDate);
+
+    /**
+     * Attach a process uuid to the dataset selection
+     * @param basket the user's basket
+     * @param datasetId the id of the dataset selection to modify
+     * @param description the process UUID and parameters to attach to the dataset selection, remove the existing process desc if null
+     * @return update {@link Basket}
+     */
+    Basket attachProcessing(Basket basket, Long datasetId, @Nullable ProcessDatasetDescription description);
+
 }

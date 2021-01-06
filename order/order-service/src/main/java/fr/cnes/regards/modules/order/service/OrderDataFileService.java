@@ -50,8 +50,10 @@ import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
 
 import feign.Response;
+import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
 import fr.cnes.regards.framework.feign.security.FeignSecurityManager;
 import fr.cnes.regards.framework.jpa.multitenant.transactional.MultitenantTransactional;
+import fr.cnes.regards.framework.security.role.DefaultRole;
 import fr.cnes.regards.framework.urn.UniformResourceName;
 import fr.cnes.regards.framework.utils.file.DownloadUtils;
 import fr.cnes.regards.modules.order.dao.IFilesTasksRepository;
@@ -63,6 +65,7 @@ import fr.cnes.regards.modules.order.domain.FilesTask;
 import fr.cnes.regards.modules.order.domain.Order;
 import fr.cnes.regards.modules.order.domain.OrderDataFile;
 import fr.cnes.regards.modules.order.domain.OrderStatus;
+import fr.cnes.regards.modules.order.service.processing.IProcessingEventSender;
 import fr.cnes.regards.modules.storage.client.IStorageRestClient;
 
 /**
@@ -91,6 +94,12 @@ public class OrderDataFileService implements IOrderDataFileService {
 
     @Autowired
     private IStorageRestClient storageClient;
+
+    @Autowired
+    private IAuthenticationResolver authResolver;
+
+    @Autowired
+    private IProcessingEventSender processingEventSender;
 
     @Value("${http.proxy.host:#{null}}")
     private String proxyHost;
@@ -126,8 +135,10 @@ public class OrderDataFileService implements IOrderDataFileService {
         FilesTask filesTask = filesTasksRepository.findDistinctByFilesContaining(dataFile);
         // In case FilesTask does not yet exist
         if (filesTask != null) {
-            if (filesTask.getFiles().stream().allMatch(f -> (f.getState() == FileState.DOWNLOADED)
-                    || (f.getState() == FileState.ERROR) || (f.getState() == FileState.DOWNLOAD_ERROR))) {
+            if (filesTask.getFiles().stream()
+                    .allMatch(f -> (f.getState() == FileState.DOWNLOADED) || (f.getState() == FileState.ERROR)
+                            || (f.getState() == FileState.DOWNLOAD_ERROR)
+                            || (f.getState() == FileState.PROCESSING_ERROR))) {
                 filesTask.setEnded(true);
             }
             // ...and if it is waiting for user
@@ -145,13 +156,22 @@ public class OrderDataFileService implements IOrderDataFileService {
     @Override
     public Iterable<OrderDataFile> save(Iterable<OrderDataFile> inDataFiles) {
         List<OrderDataFile> dataFiles = repos.saveAll(inDataFiles);
+        launchNextFilesTasks(dataFiles);
+        return dataFiles;
+    }
+
+    @Override
+    public void launchNextFilesTasks(Iterable<OrderDataFile> dataFiles) {
         // Look at FilesTasks if they are ended (no more file to download)...
-        List<FilesTask> filesTasks = filesTasksRepository.findDistinctByFilesIn(dataFiles);
+        List<FilesTask> filesTasks = filesTasksRepository
+                .findDistinctByFilesIn(io.vavr.collection.List.ofAll(dataFiles).toJavaList());
         Long orderId = null;
         // Update all these FileTasks
         for (FilesTask filesTask : filesTasks) {
-            if (filesTask.getFiles().stream().allMatch(f -> (f.getState() == FileState.DOWNLOADED)
-                    || (f.getState() == FileState.ERROR) || (f.getState() == FileState.DOWNLOAD_ERROR))) {
+            if (filesTask.getFiles().stream()
+                    .allMatch(f -> (f.getState() == FileState.DOWNLOADED) || (f.getState() == FileState.ERROR)
+                            || (f.getState() == FileState.DOWNLOAD_ERROR)
+                            || (f.getState() == FileState.PROCESSING_ERROR))) {
                 filesTask.setEnded(true);
             }
             // Save order id for later
@@ -167,7 +187,6 @@ public class OrderDataFileService implements IOrderDataFileService {
             order.setWaitingForUser(filesTasksRepository.findByOrderId(orderId).anyMatch(t -> t.isWaitingForUser()));
             orderRepository.save(order);
         }
-        return dataFiles;
     }
 
     @Override
@@ -215,7 +234,9 @@ public class OrderDataFileService implements IOrderDataFileService {
             }
         } else {
             try {
-                FeignSecurityManager.asSystem();
+                // To download through storage client we must be authenticate as user in order to
+                // impact the download quotas, but we upgrade the privileges so that the request passes.
+                FeignSecurityManager.asUser(authResolver.getUser(), DefaultRole.PROJECT_ADMIN.name());
                 response = storageClient.downloadFile(dataFile.getChecksum());
             } catch (RuntimeException e) {
                 LOGGER.error("Error while downloading file from Archival Storage", e);
@@ -238,6 +259,9 @@ public class OrderDataFileService implements IOrderDataFileService {
                     }
                 }
             }
+            if (response != null) {
+                response.close();
+            }
         }
         // Update OrderDataFile state
         if (error) { // set State as DOWNLOAD_ERROR ONLY IF file wasn't previously DOWLOADED (ie. AVAILABLE)
@@ -246,10 +270,11 @@ public class OrderDataFileService implements IOrderDataFileService {
             }
         } else { // Set State as DOWNLOADED, even if it is online
             dataFile.setState(FileState.DOWNLOADED);
+            processingEventSender.sendDownloadedFilesNotification(Collections.singleton(dataFile));
         }
         dataFile = self.save(dataFile);
         Order order = orderRepository.findSimpleById(dataFile.getOrderId());
-        orderJobService.manageUserOrderJobInfos(order.getOwner());
+        orderJobService.manageUserOrderStorageFilesJobInfos(order.getOwner());
     }
 
     @Override
@@ -272,11 +297,14 @@ public class OrderDataFileService implements IOrderDataFileService {
         // Map { order_id -> treated files size  }
         Map<Long, Long> treatedSizeMap = repos
                 .selectSumSizesByOrderIdAndStates(now, FileState.AVAILABLE, FileState.DOWNLOADED,
-                                                  FileState.DOWNLOAD_ERROR, FileState.ERROR)
+                                                  FileState.DOWNLOAD_ERROR, FileState.PROCESSING_ERROR, FileState.ERROR)
                 .stream().collect(Collectors.toMap(getOrderIdFct, getValueFct));
         // Map { order_id -> files in error count } Files with status DOWNLOAD_ERROR are not taken into account
         // because they are not considered as errors (available from storage)
         Map<Long, Long> errorCountMap = repos.selectCountFilesByOrderIdAndStates(now, FileState.ERROR).stream()
+                .collect(Collectors.toMap(getOrderIdFct, getValueFct));
+        Map<Long, Long> processErrorCountMap = repos
+                .selectCountFilesByOrderIdAndStates4AllOrders(now, FileState.PROCESSING_ERROR).stream()
                 .collect(Collectors.toMap(getOrderIdFct, getValueFct));
         // Map {order_id -> available files count }
         Map<Long, Long> availableCountMap = repos.selectCountFilesByOrderIdAndStates4AllOrders(now, FileState.AVAILABLE)
@@ -287,7 +315,8 @@ public class OrderDataFileService implements IOrderDataFileService {
             long totalSize = totalSizeMap.get(order.getId());
             long treatedSize = treatedSizeMap.containsKey(order.getId()) ? treatedSizeMap.get(order.getId()) : 0l;
             order.setPercentCompleted((int) Math.floorDiv(100l * treatedSize, totalSize));
-            long errorCount = errorCountMap.containsKey(order.getId()) ? errorCountMap.get(order.getId()) : 0l;
+            long errorCount = (errorCountMap.containsKey(order.getId()) ? errorCountMap.get(order.getId()) : 0l)
+                    + (processErrorCountMap.containsKey(order.getId()) ? processErrorCountMap.get(order.getId()) : 0l);
             order.setFilesInErrorCount((int) errorCount);
             long availableCount = availableCountMap.containsKey(order.getId()) ? availableCountMap.get(order.getId())
                     : 0l;
@@ -309,7 +338,7 @@ public class OrderDataFileService implements IOrderDataFileService {
             // If no files in error = DONE
             if (errorCount == 0) {
                 order.setStatus(OrderStatus.DONE);
-            } else if (errorCount == order.getDatasetTasks().stream().mapToInt(DatasetTask::getFilesCount).sum()) {
+            } else if (errorCount == order.getDatasetTasks().stream().mapToLong(DatasetTask::getFilesCount).sum()) {
                 // If all files in error => FAILED
                 order.setStatus(OrderStatus.FAILED);
             } else { // DONE_WITH_WARNING

@@ -1,50 +1,54 @@
+/*
+ * Copyright 2017-2020 CNES - CENTRE NATIONAL d'ETUDES SPATIALES
+ *
+ * This file is part of REGARDS.
+ *
+ * REGARDS is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * REGARDS is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with REGARDS. If not, see <http://www.gnu.org/licenses/>.
+ */
 package fr.cnes.regards.modules.order.service.job;
 
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
-
+import fr.cnes.regards.modules.storage.client.FileReferenceEventDTO;
+import fr.cnes.regards.modules.storage.client.FileReferenceUpdateDTO;
+import fr.cnes.regards.modules.storage.client.IStorageFileListener;
 import org.springframework.stereotype.Service;
 
-import fr.cnes.regards.modules.storage.client.IStorageFileListener;
-import fr.cnes.regards.modules.storage.client.RequestInfo;
-import fr.cnes.regards.modules.storage.domain.database.FileReference;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Handle storage AMQP message that can be received. Empty methods concerns messages that are of no importance for rs-order
+ *
+ * @author Sébastien Binda
  */
 @Service
 public class StorageFileListenerService implements IStorageFileListener, IStorageFileListenerService {
 
-    private final Set<StorageFilesJob> subscribers = new HashSet<>();
+    private final Set<StorageFilesJob> subscribers = ConcurrentHashMap.newKeySet();
 
     @Override
-    public void onFileStored(String checksum, String storage, Collection<String> owners,
-            Collection<RequestInfo> requestInfos) {
+    public void onFileAvailable(List<FileReferenceEventDTO> available) {
+        for (FileReferenceEventDTO event : available) {
+            subscribers.forEach(subscriber -> subscriber.handleFileEvent(event.getChecksum(), true));
+        }
     }
 
     @Override
-    public void onFileStoreError(String checksum, String storage, Collection<String> owners,
-            Collection<RequestInfo> requestInfos, String errorCause) {
-    }
-
-    @Override
-    public void onFileAvailable(String checksum, Collection<RequestInfo> requestInfos) {
-        subscribers.stream().forEach(subscriber -> subscriber.handle(checksum, true));
-    }
-
-    @Override
-    public void onFileNotAvailable(String checksum, Collection<RequestInfo> requestInfos, String errorCause) {
-        subscribers.stream().forEach(subscriber -> subscriber.handle(checksum, false));
-    }
-
-    @Override
-    public void onFileDeleted(String checksum, String storage, String owner, Collection<RequestInfo> requestInfos) {
-    }
-
-    @Override
-    public void onFileUpdated(String checksum, String storage, FileReference updateFile) {
-
+    public void onFileNotAvailable(List<FileReferenceEventDTO> availabilityError) {
+        for (FileReferenceEventDTO event : availabilityError) {
+            subscribers.forEach(subscriber -> subscriber.handleFileEvent(event.getChecksum(), false));
+        }
     }
 
     @Override
@@ -57,4 +61,23 @@ public class StorageFileListenerService implements IStorageFileListener, IStorag
         subscribers.remove(unscriber);
     }
 
+    @Override
+    public void onFileStored(List<FileReferenceEventDTO> stored) {
+        // Do nothing because message is of no importance for rs-order
+    }
+
+    @Override
+    public void onFileStoreError(List<FileReferenceEventDTO> storedError) {
+        // Do nothing because message is of no importance for rs-order
+    }
+
+    @Override
+    public void onFileDeletedForOwner(String owner, List<FileReferenceEventDTO> deletedForThisOwner) {
+        // Do nothing because message is of no importance for rs-order
+    }
+
+    @Override
+    public void onFileUpdated(List<FileReferenceUpdateDTO> updatedReferences) {
+        // Do nothing because message is of no importance for rs-order
+    }
 }

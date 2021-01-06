@@ -18,24 +18,21 @@
  */
 package fr.cnes.regards.modules.order.test;
 
-import org.mockito.Mockito;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.PropertySource;
-import org.springframework.scheduling.annotation.EnableScheduling;
-
 import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
 import fr.cnes.regards.modules.emails.client.IEmailClient;
 import fr.cnes.regards.modules.model.client.IAttributeModelClient;
+import fr.cnes.regards.modules.order.service.processing.IProcessingEventSender;
+import fr.cnes.regards.modules.processing.client.IProcessingRestClient;
 import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
 import fr.cnes.regards.modules.search.client.IComplexSearchClient;
 import fr.cnes.regards.modules.search.client.ILegacySearchEngineClient;
 import fr.cnes.regards.modules.storage.client.IStorageClient;
 import fr.cnes.regards.modules.storage.client.IStorageFileListener;
 import fr.cnes.regards.modules.storage.client.IStorageRestClient;
+import org.mockito.Mockito;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.context.annotation.*;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * @author oroussel
@@ -90,4 +87,11 @@ public class ServiceConfigurationWithFilesNotAvailable {
         return Mockito.mock(IEmailClient.class);
     }
 
+    @Bean
+    public IProcessingRestClient processingRestClient() {
+        return Mockito.mock(IProcessingRestClient.class);
+    }
+
+    @Bean
+    public IProcessingEventSender processingEventSender() { return Mockito.mock(IProcessingEventSender.class); }
 }

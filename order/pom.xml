@@ -22,15 +22,21 @@
 
 	<groupId>fr.cnes.regards.modules</groupId>
 	<artifactId>order</artifactId>
-	<version>1.2.1</version>
+	<version>1.4.0</version>
 	<packaging>pom</packaging>
 
 	<parent>
 		<groupId>fr.cnes.regards</groupId>
 		<artifactId>regards-parent</artifactId>
-		<version>1.2.1</version>
+		<version>1.4.0</version>
 		<relativePath/>
 	</parent>
+
+	<properties>
+		<lombok.version>1.18.12</lombok.version>
+		<surefire.rerunFailingTestsCount>5</surefire.rerunFailingTestsCount>
+		<failsafe.rerunFailingTestsCount>5</failsafe.rerunFailingTestsCount>
+	</properties>
 
 	<dependencyManagement>
 		<dependencies>

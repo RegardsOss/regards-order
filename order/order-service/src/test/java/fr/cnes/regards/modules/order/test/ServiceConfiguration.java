@@ -18,25 +18,23 @@
  */
 package fr.cnes.regards.modules.order.test;
 
-import org.mockito.Mockito;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.PropertySource;
-import org.springframework.scheduling.annotation.EnableScheduling;
-
 import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
 import fr.cnes.regards.modules.emails.client.IEmailClient;
 import fr.cnes.regards.modules.model.client.IAttributeModelClient;
 import fr.cnes.regards.modules.model.client.IModelAttrAssocClient;
+import fr.cnes.regards.modules.order.service.processing.IProcessingEventSender;
+import fr.cnes.regards.modules.processing.client.IProcessingRestClient;
 import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
 import fr.cnes.regards.modules.search.client.IComplexSearchClient;
 import fr.cnes.regards.modules.search.client.ILegacySearchEngineClient;
 import fr.cnes.regards.modules.storage.client.IStorageClient;
 import fr.cnes.regards.modules.storage.client.IStorageFileListener;
 import fr.cnes.regards.modules.storage.client.IStorageRestClient;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.context.annotation.*;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
+import static org.mockito.Mockito.mock;
 
 /**
  * @author oroussel
@@ -57,7 +55,7 @@ public class ServiceConfiguration {
 
     @Bean
     public IStorageRestClient storageRestClient() {
-        return Mockito.mock(IStorageRestClient.class);
+        return mock(IStorageRestClient.class);
     }
 
     @Bean
@@ -67,17 +65,17 @@ public class ServiceConfiguration {
 
     @Bean
     public IProjectsClient mockProjectsClient() {
-        return Mockito.mock(IProjectsClient.class);
+        return mock(IProjectsClient.class);
     }
 
     @Bean
     public IAttributeModelClient attributeModelClient() {
-        return Mockito.mock(IAttributeModelClient.class);
+        return mock(IAttributeModelClient.class);
     }
 
     @Bean
     public IModelAttrAssocClient modelAttrAssocClient() {
-        return Mockito.mock(IModelAttrAssocClient.class);
+        return mock(IModelAttrAssocClient.class);
     }
 
     @Bean
@@ -86,70 +84,23 @@ public class ServiceConfiguration {
         return new StorageClientMock(listener, true);
     }
 
-    /**
-     * TODO : Replace by new storage client
-    @Bean
-    public IAipClient mockAipClient() {
-        final AipClientProxy aipClientProxy = new AipClientProxy(publisher);
-        InvocationHandler handler = (proxy, method, args) -> {
-            for (Method aipClientProxyMethod : aipClientProxy.getClass().getMethods()) {
-                if (aipClientProxyMethod.getName().equals(method.getName())) {
-                    return aipClientProxyMethod.invoke(aipClientProxy, args);
-                }
-            }
-            return null;
-        };
-        return (IAipClient) Proxy.newProxyInstance(IAipClient.class.getClassLoader(),
-                                                   new Class<?>[] { IAipClient.class }, handler);
-    }
-    */
-
     @Bean
     public IAuthenticationResolver mockAuthResolver() {
-        return Mockito.mock(IAuthenticationResolver.class);
+        return mock(IAuthenticationResolver.class);
     }
 
     @Bean
     public IEmailClient mockEmailClient() {
-        return Mockito.mock(IEmailClient.class);
+        return mock(IEmailClient.class);
     }
 
-    /**
-     * TODO : Replace by new storage client
-    private class AipClientProxy {
-
-        private final IPublisher publisher;
-
-        public AipClientProxy(IPublisher publisher) {
-            this.publisher = publisher;
-        }
-
-        @SuppressWarnings("unused")
-        public ResponseEntity<AvailabilityResponse> makeFilesAvailable(AvailabilityRequest availabilityRequest) {
-            for (String checksum : availabilityRequest.getChecksums()) {
-                if (((int) (Math.random() * 10) % 2) == 0) {
-                    publisher.publish(new DataFileEvent(DataFileEventState.AVAILABLE, checksum));
-                } else {
-                    publisher.publish(new DataFileEvent(DataFileEventState.ERROR, checksum));
-                }
-            }
-            return ResponseEntity.ok(new AvailabilityResponse(Collections.emptySet(), Collections.emptySet(),
-                    Collections.emptySet()));
-        }
-
-        @SuppressWarnings("unused")
-        public Response downloadFile(String aipId, String checksum) {
-            Response mockResp = Mockito.mock(Response.class);
-            try {
-                Mockito.when(mockResp.body().asInputStream())
-                        .thenReturn(getClass().getResourceAsStream("/files/" + checksum));
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            return mockResp;
-        }
-
+    @Bean
+    public IProcessingRestClient processingRestClient() {
+        return mock(IProcessingRestClient.class);
     }
-    */
 
+    @Bean
+    public IProcessingEventSender processingEventSender() {
+        return mock(IProcessingEventSender.class);
+    }
 }

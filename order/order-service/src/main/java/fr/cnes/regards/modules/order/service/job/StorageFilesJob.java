@@ -18,38 +18,61 @@
  */
 package fr.cnes.regards.modules.order.service.job;
 
-import java.time.OffsetDateTime;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.Semaphore;
-
-import org.springframework.beans.factory.annotation.Autowired;
-
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-
 import fr.cnes.regards.framework.modules.jobs.domain.AbstractJob;
 import fr.cnes.regards.framework.modules.jobs.domain.JobParameter;
 import fr.cnes.regards.framework.modules.jobs.domain.exception.JobParameterInvalidException;
 import fr.cnes.regards.framework.modules.jobs.domain.exception.JobParameterMissingException;
+import fr.cnes.regards.framework.modules.jobs.service.IJobInfoService;
+import fr.cnes.regards.modules.order.dao.IOrderDataFileRepository;
 import fr.cnes.regards.modules.order.domain.FileState;
 import fr.cnes.regards.modules.order.domain.OrderDataFile;
 import fr.cnes.regards.modules.order.service.IOrderDataFileService;
+import fr.cnes.regards.modules.order.service.IOrderJobService;
+import fr.cnes.regards.modules.order.service.job.parameters.*;
 import fr.cnes.regards.modules.storage.client.IStorageClient;
+import io.vavr.control.Option;
+import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.OffsetDateTime;
+import java.util.*;
+import java.util.concurrent.Semaphore;
+import java.util.function.Function;
+import java.util.stream.Stream;
+
+/**
+ * Job  to ensure with storage microservice that order files are availables to download.
+ *
+ * When using processing, this job launches the {@link ProcessExecutionJob} referenced in
+ * the #processJobInfoId field.
+ *
+ * @author Sébastien Binda
+ *
+ */
 public class StorageFilesJob extends AbstractJob<Void> {
 
     @Autowired
-    private IStorageClient storageClient;
-
-    private Integer subOrderValidationPeriodDays;
-
-    private Semaphore semaphore;
+    protected IOrderDataFileService dataFileService;
 
     @Autowired
-    private IStorageFileListenerService subscriber;
+    protected IJobInfoService jobInfoService;
+
+    @Autowired
+    protected IStorageFileListenerService subscriber;
+
+    @Autowired
+    protected IStorageClient storageClient;
+
+    @Autowired
+    protected IOrderJobService orderJobService;
+
+    protected Integer subOrderValidationPeriodDays;
+
+    protected Semaphore semaphore;
+
+    protected Option<UUID> processJobInfoId = Option.none();
 
     /**
      * Map { checksum -> ( dataFiles) } of data files.
@@ -57,42 +80,56 @@ public class StorageFilesJob extends AbstractJob<Void> {
      * uri)
      * The case where checksum is the same for 2 different files is abandoned (never mind)
      */
-    private final Multimap<String, OrderDataFile> dataFilesMultimap = HashMultimap.create();
+    protected final Multimap<String, OrderDataFile> dataFilesMultimap = HashMultimap.create();
 
     /**
      * Set of file checksums already handled by a DataStorageEvent.
      * Used in order to avoid listening on two same available events from storage.
      */
-    private final Set<String> alreadyHandledFiles = Sets.newHashSet();
+    protected final Set<String> alreadyHandledFiles = Sets.newHashSet();
+
+    /**
+     * The user.
+     */
+    private String user;
 
     @Autowired
-    private IOrderDataFileService dataFileService;
+    private IOrderDataFileRepository orderDataFileRepository;
 
     @Override
     public void setParameters(Map<String, JobParameter> parameters)
             throws JobParameterMissingException, JobParameterInvalidException {
-        if (parameters.isEmpty()) {
-            throw new JobParameterMissingException("No parameter provided");
-        }
-        if (parameters.size() != 4) {
+        if ((parameters.size() < 4) || (parameters.size() > 5)) {
             throw new JobParameterInvalidException(
-                    "Four parameters are expected : 'files', 'expirationDate', 'user' and 'userRole'.");
+                    "Four or five parameters are expected : 'files', 'expirationDate', 'user' and 'userRole', and optionally 'processJobInfo'.");
         }
         for (JobParameter param : parameters.values()) {
-            if (!FilesJobParameter.isCompatible(param) && !(SubOrderAvailabilityPeriodJobParameter.isCompatible(param))
-                    && !UserJobParameter.isCompatible(param) && !UserRoleJobParameter.isCompatible(param)) {
+            boolean paramIsIncompatible =
+                Stream.<Function<JobParameter, Boolean>>of(
+                    FilesJobParameter::isCompatible,
+                    SubOrderAvailabilityPeriodJobParameter::isCompatible,
+                    UserJobParameter::isCompatible,
+                    UserRoleJobParameter::isCompatible,
+                    ProcessJobInfoJobParameter::isCompatible
+                ).noneMatch(f -> f.apply(param));
+            if (paramIsIncompatible) {
                 throw new JobParameterInvalidException(
-                        "Please use FilesJobParameter, ExpirationDateJobParameter, UserJobParameter and "
+                        "Please use ProcessJobInfoJobParameter, FilesJobParameter, ExpirationDateJobParameter, UserJobParameter and "
                                 + "UserRoleJobParameter in place of JobParameter (these "
                                 + "classes are here to facilitate your life so please use them.");
             }
             if (FilesJobParameter.isCompatible(param)) {
-                OrderDataFile[] files = param.getValue();
+                Long[] fileIds = param.getValue();
+                List<OrderDataFile> files = orderDataFileRepository.findAllById(Arrays.asList(fileIds));
                 for (OrderDataFile dataFile : files) {
                     dataFilesMultimap.put(dataFile.getChecksum(), dataFile);
                 }
             } else if (SubOrderAvailabilityPeriodJobParameter.isCompatible(param)) {
                 subOrderValidationPeriodDays = param.getValue();
+            } else if (ProcessJobInfoJobParameter.isCompatible(param)) {
+                processJobInfoId = Option.some(param.getValue());
+            } else if (UserJobParameter.isCompatible(param)) {
+                user = param.getValue();
             }
         }
     }
@@ -122,12 +159,26 @@ public class StorageFilesJob extends AbstractJob<Void> {
             dataFilesMultimap.values().forEach(df -> df.setState(FileState.ERROR));
             throw e;
         } catch (InterruptedException e) {
-            logger.info("Order job has been interupted !");
+            Thread.currentThread().interrupt();
+            logger.info("Order job has been interrupted !");
         } finally {
             // All files have bean treated by storage, no more event subscriber needed...
             subscriber.unsubscribe(this);
-            // ...and all order data files statuses are updated into database
-            dataFileService.save(dataFilesMultimap.values());
+
+            processJobInfoId
+                    // NO PROCESSING
+                    .onEmpty(() ->
+                    // All order data files statuses are updated into database (if there is no process to launch)
+                    dataFileService.save(dataFilesMultimap.values()))
+                    // PROCESSING TO BE LAUNCHED
+                    .peek(id -> {
+                        // Delete the OrderDataFiles which were only temporary input files
+                        orderDataFileRepository.deleteAll(dataFilesMultimap.values());
+                        // Enqueue the processing job because all of its dependencies are ready (if there is a process to launch)
+                        jobInfoService.enqueueJobForId(id);
+                        // Nudge the order job service to enqueue next storage files jobs.
+                        orderJobService.manageUserOrderStorageFilesJobInfos(user);
+                    });
         }
     }
 
@@ -135,7 +186,7 @@ public class StorageFilesJob extends AbstractJob<Void> {
      * Handle Events from storage about all files availability asking
      * Each time an event come back from storage, a token is released through semaphore
      */
-    public void handle(String checksum, boolean available) {
+    public void handleFileEvent(String checksum, boolean available) {
         if (!dataFilesMultimap.containsKey(checksum)) {
             return;
         }

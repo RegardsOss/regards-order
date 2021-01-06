@@ -18,21 +18,6 @@
  */
 package fr.cnes.regards.modules.order.service;
 
-import javax.annotation.PreDestroy;
-import javax.transaction.Transactional;
-import javax.transaction.Transactional.TxType;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.cloud.context.config.annotation.RefreshScope;
-import org.springframework.cloud.context.scope.refresh.RefreshScopeRefreshedEvent;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Service;
-
 import fr.cnes.regards.framework.amqp.ISubscriber;
 import fr.cnes.regards.framework.amqp.domain.IHandler;
 import fr.cnes.regards.framework.amqp.domain.TenantWrapper;
@@ -44,6 +29,21 @@ import fr.cnes.regards.framework.modules.jobs.domain.event.JobEvent;
 import fr.cnes.regards.framework.multitenant.IRuntimeTenantResolver;
 import fr.cnes.regards.framework.security.role.DefaultRole;
 import fr.cnes.regards.modules.order.dao.IFilesTasksRepository;
+import fr.cnes.regards.modules.order.service.job.StorageFilesJob;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.cloud.context.scope.refresh.RefreshScopeRefreshedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Service;
+
+import javax.annotation.PreDestroy;
+import javax.transaction.Transactional;
+import javax.transaction.Transactional.TxType;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Order jobs specific behavior, like priority computation or job enqueue user business rules management
@@ -111,7 +111,7 @@ public class OrderJobService implements IOrderJobService, IHandler<JobEvent> {
     }
 
     @Override
-    public void manageUserOrderJobInfos(String user) {
+    public void manageUserOrderStorageFilesJobInfos(String user) {
         // Current count of user jobs running, planned or to be run
         int currentJobsCount = (int) jobInfoRepository.countUserPlannedAndRunningJobs(user);
 
@@ -121,8 +121,8 @@ public class OrderJobService implements IOrderJobService, IHandler<JobEvent> {
         // There is room for several jobs to be executed for this user if sum of theses 2 values is less than maximum
         // defined one
         if (currentJobsCount + finishedJobsWithFilesToBeDownloadedCount < maxJobsPerUser) {
-            List<JobInfo> jobInfos = jobInfoRepository.findTopUserPendingJobs(user, maxJobsPerUser - currentJobsCount
-                    - finishedJobsWithFilesToBeDownloadedCount);
+            int count = maxJobsPerUser - currentJobsCount - finishedJobsWithFilesToBeDownloadedCount;
+            List<JobInfo> jobInfos = jobInfoRepository.findTopUserPendingJobs(user, StorageFilesJob.class.getName(), count);
             if (!jobInfos.isEmpty()) {
                 for (JobInfo jobInfo : jobInfos) {
                     jobInfo.updateStatus(JobStatus.QUEUED);
@@ -147,7 +147,7 @@ public class OrderJobService implements IOrderJobService, IHandler<JobEvent> {
                 tenantResolver.forceTenant(wrapper.getTenant());
                 Optional<JobInfo> endedJobInfo = jobInfoRepository.findById(jobId);
                 if (endedJobInfo.isPresent()) {
-                    self.manageUserOrderJobInfos(endedJobInfo.get().getOwner());
+                    self.manageUserOrderStorageFilesJobInfos(endedJobInfo.get().getOwner());
                 }
                 break;
             default:

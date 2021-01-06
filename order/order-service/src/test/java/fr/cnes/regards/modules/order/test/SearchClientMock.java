@@ -18,27 +18,10 @@
  */
 package fr.cnes.regards.modules.order.test;
 
-import java.io.File;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
-import org.junit.Assert;
-import org.springframework.hateoas.EntityModel;
-import org.springframework.hateoas.PagedModel;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-
 import fr.cnes.regards.framework.oais.urn.OAISIdentifier;
 import fr.cnes.regards.framework.urn.DataType;
 import fr.cnes.regards.framework.urn.EntityType;
@@ -57,6 +40,17 @@ import fr.cnes.regards.modules.search.client.IComplexSearchClient;
 import fr.cnes.regards.modules.search.domain.ComplexSearchRequest;
 import fr.cnes.regards.modules.search.domain.SearchRequest;
 import fr.cnes.regards.modules.search.domain.plugin.legacy.FacettedPagedModel;
+import org.junit.Assert;
+import org.springframework.hateoas.EntityModel;
+import org.springframework.hateoas.PagedModel;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+
+import java.io.File;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.*;
 
 /**
  * Mock of ISearchClient to be used by ServiceConfiguration
@@ -74,11 +68,11 @@ public class SearchClientMock implements IComplexSearchClient {
     public static final UniformResourceName DS3_IP_ID = UniformResourceName
             .build(OAISIdentifier.AIP, EntityType.DATASET, "ORDER", UUID.randomUUID(), 1);
 
-    private static Dataset ds1;
+    protected static Dataset ds1;
 
-    private static Dataset ds2;
+    protected static Dataset ds2;
 
-    private static Dataset ds3;
+    protected static Dataset ds3;
 
     static {
 
@@ -106,17 +100,65 @@ public class SearchClientMock implements IComplexSearchClient {
      * DS1 => 2 documents, 2 RAWDATA files (+ 6 QUICKLOOKS 2 x 3 of each size), 1 Mb each RAW file
      * 500 b QUICKLOOK SD, 1 kb MD, 500 kb HD (1 501 500 b)
      */
-    private static DocFilesSummary createSummaryForDs1AllFiles() {
-        DocFilesSummary summary = new DocFilesSummary(2, 8, 3_003_000);
-        DocFilesSubSummary dsSummary = new DocFilesSubSummary(2, 8, 3_003_000);
-        FilesSummary rawSummary = new FilesSummary(2, 2_000_000);
+    protected static DocFilesSummary createSummaryForDs1AllFiles() {
+        DocFilesSummary summary = new DocFilesSummary();
+        summary.addDocumentsCount(2);
+
+        DocFilesSubSummary dsSummary = new DocFilesSubSummary();
+        dsSummary.addDocumentsCount(2);
+
+        long rawCount = 2L;
+        long rawSize = 2_000_000L;
+        FilesSummary rawSummary = new FilesSummary();
+        rawSummary.addFilesCount(rawCount);
+        rawSummary.addFilesSize(rawSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_!ref", rawSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString(), rawSummary);
-        FilesSummary qlHdSummary = new FilesSummary(2, 1_000_000);
+        dsSummary.addFilesCount(rawCount);
+        dsSummary.addFilesSize(rawSize);
+        summary.addFilesCount(rawCount);
+        summary.addFilesSize(rawSize);
+
+
+        long qlHdCount = 2L;
+        long qlHdSize = 1_000_000L;
+        FilesSummary qlHdSummary = new FilesSummary();
+        qlHdSummary.addFilesCount(qlHdCount);
+        qlHdSummary.addFilesSize(qlHdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString(), qlHdSummary);
-        FilesSummary qlMdSummary = new FilesSummary(2, 2_000);
+        dsSummary.addFilesCount(qlHdCount);
+        dsSummary.addFilesSize(qlHdSize);
+        summary.addFilesCount(qlHdCount);
+        summary.addFilesSize(qlHdSize);
+
+        long qlMdCount = 2L;
+        long qlMdSize = 2_000L;
+        FilesSummary qlMdSummary = new FilesSummary();
+        qlMdSummary.addFilesCount(qlMdCount);
+        qlMdSummary.addFilesSize(qlMdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString(), qlMdSummary);
-        FilesSummary qlSdSummary = new FilesSummary(2, 1_000);
+        dsSummary.addFilesCount(qlMdCount);
+        dsSummary.addFilesSize(qlMdSize);
+        summary.addFilesCount(qlMdCount);
+        summary.addFilesSize(qlMdSize);
+
+        long qlSdCount = 2L;
+        long qlSdSize = 1_000L;
+        FilesSummary qlSdSummary = new FilesSummary();
+        qlSdSummary.addFilesCount(qlSdCount);
+        qlSdSummary.addFilesSize(qlSdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString(), qlSdSummary);
+        dsSummary.addFilesCount(qlSdCount);
+        dsSummary.addFilesSize(qlSdSize);
+        summary.addFilesCount(qlSdCount);
+        summary.addFilesSize(qlSdSize);
 
         summary.getSubSummariesMap().put(DS1_IP_ID.toString(), dsSummary);
         return summary;
@@ -127,23 +169,124 @@ public class SearchClientMock implements IComplexSearchClient {
      * 1 raw by doc, 3 quicklooks
      * 1Mb, 10 kb, 100 b, 1 b
      */
-    private static DocFilesSummary createSummaryForDs2Ds3AllFilesFirstCall() {
-        DocFilesSummary summary = new DocFilesSummary(3, 12, 3_030_303);
-        DocFilesSubSummary ds2Summary = new DocFilesSubSummary(2, 8, 2_020_202);
-        Map<String, FilesSummary> fileTypesSummaryDs2Map = ds2Summary.getFileTypesSummaryMap();
-        fileTypesSummaryDs2Map.put(DataType.RAWDATA.toString(), new FilesSummary(2, 2_000_000));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_HD.toString(), new FilesSummary(2, 20_000));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_MD.toString(), new FilesSummary(2, 200));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_SD.toString(), new FilesSummary(2, 2));
+    protected static DocFilesSummary createSummaryForDs2Ds3AllFilesFirstCall() {
+        DocFilesSummary summary = new DocFilesSummary();
+        summary.addDocumentsCount(3);
 
-        DocFilesSubSummary ds3Summary = new DocFilesSubSummary(1, 4, 1_010_101);
-        Map<String, FilesSummary> fileTypesSummaryDs3Map = ds3Summary.getFileTypesSummaryMap();
-        fileTypesSummaryDs3Map.put(DataType.RAWDATA.toString(), new FilesSummary(1, 1_000_000));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_HD.toString(), new FilesSummary(1, 10_000));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_MD.toString(), new FilesSummary(1, 100));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_SD.toString(), new FilesSummary(1, 1));
+        DocFilesSubSummary ds2Summary = new DocFilesSubSummary();
+        ds2Summary.addDocumentsCount(2);
+        Map<String, FilesSummary> fileTypesSummaryDs2Map = ds2Summary.getFileTypesSummaryMap();
+
+        long rawCount2 = 2L;
+        long rawSize2 = 2_000_000L;
+        FilesSummary rawSummary2 = new FilesSummary();
+        rawSummary2.addFilesCount(rawCount2);
+        rawSummary2.addFilesSize(rawSize2);
+        fileTypesSummaryDs2Map.put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs2Map.put(DataType.RAWDATA.toString()+"_!ref", rawSummary2);
+        fileTypesSummaryDs2Map.put(DataType.RAWDATA.toString(), rawSummary2);
+        ds2Summary.addFilesCount(rawCount2);
+        ds2Summary.addFilesSize(rawSize2);
+        summary.addFilesCount(rawCount2);
+        summary.addFilesSize(rawSize2);
+
+        long qlHdCount2 = 2L;
+        long qlHdSize2 = 20_000L;
+        FilesSummary qlHdSummary2 = new FilesSummary();
+        qlHdSummary2.addFilesCount(qlHdCount2);
+        qlHdSummary2.addFilesSize(qlHdSize2);
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary2);
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_HD.toString(), qlHdSummary2);
+        ds2Summary.addFilesCount(qlHdCount2);
+        ds2Summary.addFilesSize(qlHdSize2);
+        summary.addFilesCount(qlHdCount2);
+        summary.addFilesSize(qlHdSize2);
+
+        long qlMdCount2 = 2L;
+        long qlMdSize2 = 200L;
+        FilesSummary qlMdSummary2 = new FilesSummary();
+        qlMdSummary2.addFilesCount(qlMdCount2);
+        qlMdSummary2.addFilesSize(qlMdSize2);
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary2);
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_MD.toString(), qlMdSummary2);
+        ds2Summary.addFilesCount(qlMdCount2);
+        ds2Summary.addFilesSize(qlMdSize2);
+        summary.addFilesCount(qlMdCount2);
+        summary.addFilesSize(qlMdSize2);
+
+        long qlSdCount2 = 2L;
+        long qlSdSize2 = 2L;
+        FilesSummary qlSdSummary2 = new FilesSummary();
+        qlSdSummary2.addFilesCount(qlSdCount2);
+        qlSdSummary2.addFilesSize(qlSdSize2);
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary2);
+        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_SD.toString(), qlSdSummary2);
+        ds2Summary.addFilesCount(qlSdCount2);
+        ds2Summary.addFilesSize(qlSdSize2);
+        summary.addFilesCount(qlSdCount2);
+        summary.addFilesSize(qlSdSize2);
 
         summary.getSubSummariesMap().put(DS2_IP_ID.toString(), ds2Summary);
+
+        DocFilesSubSummary ds3Summary = new DocFilesSubSummary();
+        ds3Summary.addDocumentsCount(1);
+        Map<String, FilesSummary> fileTypesSummaryDs3Map = ds3Summary.getFileTypesSummaryMap();
+
+        long rawCount3 = 1L;
+        long rawSize3 = 1_000_000L;
+        FilesSummary rawSummary3 = new FilesSummary();
+        rawSummary3.addFilesCount(rawCount3);
+        rawSummary3.addFilesSize(rawSize3);
+        fileTypesSummaryDs3Map.put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs3Map.put(DataType.RAWDATA.toString()+"_!ref", rawSummary3);
+        fileTypesSummaryDs3Map.put(DataType.RAWDATA.toString(), rawSummary3);
+        ds3Summary.addFilesCount(rawCount3);
+        ds3Summary.addFilesSize(rawSize3);
+        summary.addFilesCount(rawCount3);
+        summary.addFilesSize(rawSize3);
+
+        long qlHdCount3 = 1L;
+        long qlHdSize3 = 10_000L;
+        FilesSummary qlHdSummary3 = new FilesSummary();
+        qlHdSummary3.addFilesCount(qlHdCount3);
+        qlHdSummary3.addFilesSize(qlHdSize3);
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary3);
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_HD.toString(), qlHdSummary3);
+        ds3Summary.addFilesCount(qlHdCount3);
+        ds3Summary.addFilesSize(qlHdSize3);
+        summary.addFilesCount(qlHdCount3);
+        summary.addFilesSize(qlHdSize3);
+
+        long qlMdCount3 = 1L;
+        long qlMdSize3 = 100L;
+        FilesSummary qlMdSummary3 = new FilesSummary();
+        qlMdSummary3.addFilesCount(qlMdCount3);
+        qlMdSummary3.addFilesSize(qlMdSize3);
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary3);
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_MD.toString(), qlMdSummary3);
+        ds3Summary.addFilesCount(qlMdCount3);
+        ds3Summary.addFilesSize(qlMdSize3);
+        summary.addFilesCount(qlMdCount3);
+        summary.addFilesSize(qlMdSize3);
+
+        long qlSdCount3 = 1L;
+        long qlSdSize3 = 1L;
+        FilesSummary qlSdSummary3 = new FilesSummary();
+        qlSdSummary3.addFilesCount(qlSdCount3);
+        qlSdSummary3.addFilesSize(qlSdSize3);
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary3);
+        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_SD.toString(), qlSdSummary3);
+        ds3Summary.addFilesCount(qlSdCount3);
+        ds3Summary.addFilesSize(qlSdSize3);
+        summary.addFilesCount(qlSdCount3);
+        summary.addFilesSize(qlSdSize3);
+
         summary.getSubSummariesMap().put(DS3_IP_ID.toString(), ds3Summary);
         return summary;
     }
@@ -153,16 +296,66 @@ public class SearchClientMock implements IComplexSearchClient {
      * 1 raw by doc
      * 1Mb
      */
-    private static DocFilesSummary createSummaryForDs2AllFiles() {
-        DocFilesSummary summary = new DocFilesSummary(2, 8, 2_020_202);
-        DocFilesSubSummary ds2Summary = new DocFilesSubSummary(2, 8, 2_020_202);
-        Map<String, FilesSummary> fileTypesSummaryDs2Map = ds2Summary.getFileTypesSummaryMap();
-        fileTypesSummaryDs2Map.put(DataType.RAWDATA.toString(), new FilesSummary(2, 2_000_000));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_HD.toString(), new FilesSummary(2, 20_000));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_MD.toString(), new FilesSummary(2, 200));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_SD.toString(), new FilesSummary(2, 2));
+    protected static DocFilesSummary createSummaryForDs2AllFiles() {
+        DocFilesSummary summary = new DocFilesSummary();
+        summary.addDocumentsCount(2);
 
-        summary.getSubSummariesMap().put(DS2_IP_ID.toString(), ds2Summary);
+        DocFilesSubSummary dsSummary = new DocFilesSubSummary();
+        dsSummary.addDocumentsCount(2);
+
+        long rawCount = 2L;
+        long rawSize = 2_000_000L;
+        FilesSummary rawSummary = new FilesSummary();
+        rawSummary.addFilesCount(rawCount);
+        rawSummary.addFilesSize(rawSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_!ref", rawSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString(), rawSummary);
+        dsSummary.addFilesCount(rawCount);
+        dsSummary.addFilesSize(rawSize);
+        summary.addFilesCount(rawCount);
+        summary.addFilesSize(rawSize);
+
+        long qlHdCount = 2L;
+        long qlHdSize = 20_000L;
+        FilesSummary qlHdSummary = new FilesSummary();
+        qlHdSummary.addFilesCount(qlHdCount);
+        qlHdSummary.addFilesSize(qlHdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString(), qlHdSummary);
+        dsSummary.addFilesCount(qlHdCount);
+        dsSummary.addFilesSize(qlHdSize);
+        summary.addFilesCount(qlHdCount);
+        summary.addFilesSize(qlHdSize);
+
+        long qlMdCount = 2L;
+        long qlMdSize = 200L;
+        FilesSummary qlMdSummary = new FilesSummary();
+        qlMdSummary.addFilesCount(qlMdCount);
+        qlMdSummary.addFilesSize(qlMdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString(), qlMdSummary);
+        dsSummary.addFilesCount(qlMdCount);
+        dsSummary.addFilesSize(qlMdSize);
+        summary.addFilesCount(qlMdCount);
+        summary.addFilesSize(qlMdSize);
+
+        long qlSdCount = 2L;
+        long qlSdSize = 2L;
+        FilesSummary qlSdSummary = new FilesSummary();
+        qlSdSummary.addFilesCount(qlSdCount);
+        qlSdSummary.addFilesSize(qlSdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString(), qlSdSummary);
+        dsSummary.addFilesCount(qlSdCount);
+        dsSummary.addFilesSize(qlSdSize);
+        summary.addFilesCount(qlSdCount);
+        summary.addFilesSize(qlSdSize);
+
+        summary.getSubSummariesMap().put(DS2_IP_ID.toString(), dsSummary);
         return summary;
     }
 
@@ -171,54 +364,247 @@ public class SearchClientMock implements IComplexSearchClient {
      * 1 raw by doc
      * 1Mb
      */
-    private static DocFilesSummary createSummaryForDs3AllFiles() {
-        DocFilesSummary summary = new DocFilesSummary(1, 4, 1_010_101);
-        DocFilesSubSummary ds3Summary = new DocFilesSubSummary(1, 4, 1_010_101);
-        Map<String, FilesSummary> fileTypesSummaryDs3Map = ds3Summary.getFileTypesSummaryMap();
-        fileTypesSummaryDs3Map.put(DataType.RAWDATA.toString(), new FilesSummary(1, 1_010_101));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_HD.toString(), new FilesSummary(1, 10_000));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_MD.toString(), new FilesSummary(1, 100));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_SD.toString(), new FilesSummary(1, 1));
+    protected static DocFilesSummary createSummaryForDs3AllFiles() {
+        DocFilesSummary summary = new DocFilesSummary();
+        summary.addDocumentsCount(1);
 
-        summary.getSubSummariesMap().put(DS3_IP_ID.toString(), ds3Summary);
+        DocFilesSubSummary dsSummary = new DocFilesSubSummary();
+        dsSummary.addDocumentsCount(1);
+
+        long rawCount = 1L;
+        long rawSize = 1_000_000L;
+        FilesSummary rawSummary = new FilesSummary();
+        rawSummary.addFilesCount(rawCount);
+        rawSummary.addFilesSize(rawSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_!ref", rawSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString(), rawSummary);
+        dsSummary.addFilesCount(rawCount);
+        dsSummary.addFilesSize(rawSize);
+        summary.addFilesCount(rawCount);
+        summary.addFilesSize(rawSize);
+
+        long qlHdCount = 1L;
+        long qlHdSize = 10_000L;
+        FilesSummary qlHdSummary = new FilesSummary();
+        qlHdSummary.addFilesCount(qlHdCount);
+        qlHdSummary.addFilesSize(qlHdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString(), qlHdSummary);
+        dsSummary.addFilesCount(qlHdCount);
+        dsSummary.addFilesSize(qlHdSize);
+        summary.addFilesCount(qlHdCount);
+        summary.addFilesSize(qlHdSize);
+
+        long qlMdCount = 1L;
+        long qlMdSize = 100L;
+        FilesSummary qlMdSummary = new FilesSummary();
+        qlMdSummary.addFilesCount(qlMdCount);
+        qlMdSummary.addFilesSize(qlMdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString(), qlMdSummary);
+        dsSummary.addFilesCount(qlMdCount);
+        dsSummary.addFilesSize(qlMdSize);
+        summary.addFilesCount(qlMdCount);
+        summary.addFilesSize(qlMdSize);
+
+        long qlSdCount = 1L;
+        long qlSdSize = 1L;
+        FilesSummary qlSdSummary = new FilesSummary();
+        qlSdSummary.addFilesCount(qlSdCount);
+        qlSdSummary.addFilesSize(qlSdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString(), qlSdSummary);
+        dsSummary.addFilesCount(qlSdCount);
+        dsSummary.addFilesSize(qlSdSize);
+        summary.addFilesCount(qlSdCount);
+        summary.addFilesSize(qlSdSize);
+
+        summary.getSubSummariesMap().put(DS3_IP_ID.toString(), dsSummary);
         return summary;
     }
 
-    private static DocFilesSummary createSummaryForAllDsAllFiles() {
-        DocFilesSummary summary = new DocFilesSummary(5, 20, 5_023_202);
+    protected static DocFilesSummary createSummaryForAllDsAllFiles() {
+        DocFilesSummary summary = new DocFilesSummary();
+        summary.addDocumentsCount(5);
 
-        DocFilesSubSummary dsSummary = new DocFilesSubSummary(2, 8, 3_003_00);
-        FilesSummary rawSummary = new FilesSummary(2, 2_000_000);
+        DocFilesSubSummary dsSummary = new DocFilesSubSummary();
+        dsSummary.addDocumentsCount(2);
+
+        long rawCount = 2L;
+        long rawSize = 2_000_000L;
+        FilesSummary rawSummary = new FilesSummary();
+        rawSummary.addFilesCount(rawCount);
+        rawSummary.addFilesSize(rawSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_!ref", rawSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString(), rawSummary);
-        FilesSummary qlHdSummary = new FilesSummary(2, 1_000_000);
+        dsSummary.addFilesCount(rawCount);
+        dsSummary.addFilesSize(rawSize);
+        summary.addFilesCount(rawCount);
+        summary.addFilesSize(rawSize);
+
+        long qlHdCount = 2L;
+        long qlHdSize = 1_000_000L;
+        FilesSummary qlHdSummary = new FilesSummary();
+        qlHdSummary.addFilesCount(qlHdCount);
+        qlHdSummary.addFilesSize(qlHdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString(), qlHdSummary);
-        FilesSummary qlMdSummary = new FilesSummary(2, 2_000);
+        dsSummary.addFilesCount(qlHdCount);
+        dsSummary.addFilesSize(qlHdSize);
+        summary.addFilesCount(qlHdCount);
+        summary.addFilesSize(qlHdSize);
+
+        long qlMdCount = 2L;
+        long qlMdSize = 2_000L;
+        FilesSummary qlMdSummary = new FilesSummary();
+        qlMdSummary.addFilesCount(qlMdCount);
+        qlMdSummary.addFilesSize(qlMdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString(), qlMdSummary);
-        FilesSummary qlSdSummary = new FilesSummary(2, 1_000);
+        dsSummary.addFilesCount(qlMdCount);
+        dsSummary.addFilesSize(qlMdSize);
+        summary.addFilesCount(qlMdCount);
+        summary.addFilesSize(qlMdSize);
+
+        long qlSdCount = 2L;
+        long qlSdSize = 1_000L;
+        FilesSummary qlSdSummary = new FilesSummary();
+        qlSdSummary.addFilesCount(qlSdCount);
+        qlSdSummary.addFilesSize(qlSdSize);
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary);
         dsSummary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString(), qlSdSummary);
+        dsSummary.addFilesCount(qlSdCount);
+        dsSummary.addFilesSize(qlSdSize);
+        summary.addFilesCount(qlSdCount);
+        summary.addFilesSize(qlSdSize);
 
         summary.getSubSummariesMap().put(DS1_IP_ID.toString(), dsSummary);
 
-        DocFilesSubSummary ds2Summary = new DocFilesSubSummary(2, 8, 2_020_202);
-        Map<String, FilesSummary> fileTypesSummaryDs2Map = ds2Summary.getFileTypesSummaryMap();
-        fileTypesSummaryDs2Map.put(DataType.RAWDATA.toString(), new FilesSummary(2, 2_000_000));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_HD.toString(), new FilesSummary(2, 20_000));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_MD.toString(), new FilesSummary(2, 200));
-        fileTypesSummaryDs2Map.put(DataType.QUICKLOOK_SD.toString(), new FilesSummary(2, 2));
+        DocFilesSubSummary ds2Summary = new DocFilesSubSummary();
+        ds2Summary.addDocumentsCount(2);
 
-        DocFilesSubSummary ds3Summary = new DocFilesSubSummary(1, 4, 1_010_101);
-        Map<String, FilesSummary> fileTypesSummaryDs3Map = ds3Summary.getFileTypesSummaryMap();
-        fileTypesSummaryDs3Map.put(DataType.RAWDATA.toString(), new FilesSummary(1, 1_000_000));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_HD.toString(), new FilesSummary(1, 10_000));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_MD.toString(), new FilesSummary(1, 100));
-        fileTypesSummaryDs3Map.put(DataType.QUICKLOOK_SD.toString(), new FilesSummary(1, 1));
+        long rawCount2 = 2L;
+        long rawSize2 = 2_000_000L;
+        FilesSummary rawSummary2 = new FilesSummary();
+        rawSummary2.addFilesCount(rawCount2);
+        rawSummary2.addFilesSize(rawSize2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        ds2Summary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_!ref", rawSummary2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString(), rawSummary2);
+        ds2Summary.addFilesCount(rawCount2);
+        ds2Summary.addFilesSize(rawSize2);
+        summary.addFilesCount(rawCount2);
+        summary.addFilesSize(rawSize2);
+
+        long qlHdCount2 = 2L;
+        long qlHdSize2 = 20_000L;
+        FilesSummary qlHdSummary2 = new FilesSummary();
+        qlHdSummary2.addFilesCount(qlHdCount2);
+        qlHdSummary2.addFilesSize(qlHdSize2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString(), qlHdSummary2);
+        ds2Summary.addFilesCount(qlHdCount2);
+        ds2Summary.addFilesSize(qlHdSize2);
+        summary.addFilesCount(qlHdCount2);
+        summary.addFilesSize(qlHdSize2);
+
+        long qlMdCount2 = 2L;
+        long qlMdSize2 = 200L;
+        FilesSummary qlMdSummary2 = new FilesSummary();
+        qlMdSummary2.addFilesCount(qlMdCount2);
+        qlMdSummary2.addFilesSize(qlMdSize2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString(), qlMdSummary2);
+        ds2Summary.addFilesCount(qlMdCount2);
+        ds2Summary.addFilesSize(qlMdSize2);
+        summary.addFilesCount(qlMdCount2);
+        summary.addFilesSize(qlMdSize2);
+
+        long qlSdCount2 = 2L;
+        long qlSdSize2 = 2L;
+        FilesSummary qlSdSummary2 = new FilesSummary();
+        qlSdSummary2.addFilesCount(qlSdCount2);
+        qlSdSummary2.addFilesSize(qlSdSize2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary2);
+        ds2Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString(), qlSdSummary2);
+        ds2Summary.addFilesCount(qlSdCount2);
+        ds2Summary.addFilesSize(qlSdSize2);
+        summary.addFilesCount(qlSdCount2);
+        summary.addFilesSize(qlSdSize2);
 
         summary.getSubSummariesMap().put(DS2_IP_ID.toString(), ds2Summary);
+
+        DocFilesSubSummary ds3Summary = new DocFilesSubSummary();
+        ds3Summary.addDocumentsCount(1);
+
+        long rawCount3 = 1L;
+        long rawSize3 = 1_000_000L;
+        FilesSummary rawSummary3 = new FilesSummary();
+        rawSummary3.addFilesCount(rawCount3);
+        rawSummary3.addFilesSize(rawSize3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_ref", new FilesSummary());
+        ds3Summary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString()+"_!ref", rawSummary3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.RAWDATA.toString(), rawSummary3);
+        ds3Summary.addFilesCount(rawCount3);
+        ds3Summary.addFilesSize(rawSize3);
+        summary.addFilesCount(rawCount3);
+        summary.addFilesSize(rawSize3);
+
+        long qlHdCount3 = 1L;
+        long qlHdSize3 = 10_000L;
+        FilesSummary qlHdSummary3 = new FilesSummary();
+        qlHdSummary3.addFilesCount(qlHdCount3);
+        qlHdSummary3.addFilesSize(qlHdSize3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_ref", new FilesSummary());
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString()+"_!ref", qlHdSummary3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_HD.toString(), qlHdSummary3);
+        ds3Summary.addFilesCount(qlHdCount3);
+        ds3Summary.addFilesSize(qlHdSize3);
+        summary.addFilesCount(qlHdCount3);
+        summary.addFilesSize(qlHdSize3);
+
+        long qlMdCount3 = 1L;
+        long qlMdSize3 = 100L;
+        FilesSummary qlMdSummary3 = new FilesSummary();
+        qlMdSummary3.addFilesCount(qlMdCount3);
+        qlMdSummary3.addFilesSize(qlMdSize3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_ref", new FilesSummary());
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString()+"_!ref", qlMdSummary3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_MD.toString(), qlMdSummary3);
+        ds3Summary.addFilesCount(qlMdCount3);
+        ds3Summary.addFilesSize(qlMdSize3);
+        summary.addFilesCount(qlMdCount3);
+        summary.addFilesSize(qlMdSize3);
+
+        long qlSdCount3 = 1L;
+        long qlSdSize3 = 1L;
+        FilesSummary qlSdSummary3 = new FilesSummary();
+        qlSdSummary3.addFilesCount(qlSdCount3);
+        qlSdSummary3.addFilesSize(qlSdSize3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_ref", new FilesSummary());
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString()+"_!ref", qlSdSummary3);
+        ds3Summary.getFileTypesSummaryMap().put(DataType.QUICKLOOK_SD.toString(), qlSdSummary3);
+        ds3Summary.addFilesCount(qlSdCount3);
+        ds3Summary.addFilesSize(qlSdSize3);
+        summary.addFilesCount(qlSdCount3);
+        summary.addFilesSize(qlSdSize3);
+
         summary.getSubSummariesMap().put(DS3_IP_ID.toString(), ds3Summary);
         return summary;
     }
 
-    private static DataType getDataType(String filename) {
+    protected static DataType getDataType(String filename) {
         if (filename.endsWith("ql_hd.txt")) {
             return DataType.QUICKLOOK_HD;
         } else if (filename.endsWith("ql_md.txt")) {
@@ -261,29 +647,7 @@ public class SearchClientMock implements IComplexSearchClient {
         if (complexSearchRequest.getPage() == 0) {
             try {
                 List<EntityModel<EntityFeature>> list = new ArrayList<>();
-                File testDir = new File("src/test/resources/files");
-                for (File dir : testDir.listFiles()) {
-                    EntityFeature feature = new DataObjectFeature(UniformResourceName.fromString(dir.getName()),
-                            dir.getName(), dir.getName());
-                    Multimap<DataType, DataFile> fileMultimap = ArrayListMultimap.create();
-                    for (File file : dir.listFiles()) {
-                        DataFile dataFile = new DataFile();
-                        dataFile.setOnline(false);
-                        dataFile.setUri(new URI("file:///test/" + file.getName()));
-                        dataFile.setFilename(file.getName());
-                        dataFile.setFilesize(file.length());
-                        dataFile.setReference(false);
-                        dataFile.setChecksum(file.getName());
-                        dataFile.setDigestAlgorithm("MD5");
-                        dataFile.setMimeType(file.getName().endsWith("txt") ? MediaType.TEXT_PLAIN
-                                : MediaType.APPLICATION_OCTET_STREAM);
-                        dataFile.setDataType(getDataType(file.getName()));
-                        fileMultimap.put(getDataType(file.getName()), dataFile);
-                    }
-                    feature.setFiles(fileMultimap);
-                    list.add(new EntityModel<>(feature));
-                }
-
+                registerFilesIn("src/test/resources/files", list);
                 return ResponseEntity.ok(new FacettedPagedModel<>(Sets.newHashSet(), list,
                         new PagedModel.PageMetadata(list.size(), 0, list.size())));
             } catch (URISyntaxException e) {
@@ -292,5 +656,31 @@ public class SearchClientMock implements IComplexSearchClient {
         }
         return ResponseEntity.ok(new FacettedPagedModel<>(Sets.newHashSet(), Collections.emptyList(),
                 new PagedModel.PageMetadata(0, 0, 0)));
+    }
+
+
+    protected void registerFilesIn(String path, List<EntityModel<EntityFeature>> list) throws URISyntaxException {
+        File testDir = new File(path);
+        for (File dir : testDir.listFiles()) {
+            EntityFeature feature = new DataObjectFeature(UniformResourceName.fromString(dir.getName()),
+                    dir.getName(), dir.getName());
+            Multimap<DataType, DataFile> fileMultimap = ArrayListMultimap.create();
+            for (File file : dir.listFiles()) {
+                DataFile dataFile = new DataFile();
+                dataFile.setOnline(false);
+                dataFile.setUri(new URI("file:///test/" + file.getName()));
+                dataFile.setFilename(file.getName());
+                dataFile.setFilesize(file.length());
+                dataFile.setReference(false);
+                dataFile.setChecksum(file.getName());
+                dataFile.setDigestAlgorithm("MD5");
+                dataFile.setMimeType(file.getName().endsWith("txt") ? MediaType.TEXT_PLAIN
+                        : MediaType.APPLICATION_OCTET_STREAM);
+                dataFile.setDataType(getDataType(file.getName()));
+                fileMultimap.put(getDataType(file.getName()), dataFile);
+            }
+            feature.setFiles(fileMultimap);
+            list.add(new EntityModel<>(feature));
+        }
     }
 }

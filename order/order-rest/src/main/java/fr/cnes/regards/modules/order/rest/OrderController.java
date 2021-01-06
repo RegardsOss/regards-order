@@ -26,6 +26,8 @@ import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -51,6 +53,7 @@ import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
 import fr.cnes.regards.framework.gson.adapters.OffsetDateTimeAdapter;
 import fr.cnes.regards.framework.hateoas.IResourceController;
 import fr.cnes.regards.framework.hateoas.IResourceService;
+import fr.cnes.regards.framework.module.rest.exception.EntityInvalidException;
 import fr.cnes.regards.framework.module.rest.exception.EntityNotFoundException;
 import fr.cnes.regards.framework.security.annotation.ResourceAccess;
 import fr.cnes.regards.framework.security.role.DefaultRole;
@@ -74,6 +77,7 @@ import io.jsonwebtoken.MalformedJwtException;
 
 /**
  * Order controller
+ *
  * @author oroussel
  */
 @RestController
@@ -82,13 +86,24 @@ public class OrderController implements IResourceController<OrderDto> {
 
     public static class OrderRequest {
 
+        private String label;
+
         private String onSuccessUrl;
 
         public OrderRequest() {
         }
 
-        public OrderRequest(String onSuccessUrl) {
+        public OrderRequest(String label, String onSuccessUrl) {
+            this.label = label;
             this.onSuccessUrl = onSuccessUrl;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label;
         }
 
         public String getOnSuccessUrl() {
@@ -122,6 +137,8 @@ public class OrderController implements IResourceController<OrderDto> {
 
     public static final String PUBLIC_METALINK_DOWNLOAD_PATH = USER_ROOT_PATH + "/metalink/download";
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(OrderController.class);
+
     @Autowired
     private IResourceService resourceService;
 
@@ -150,17 +167,12 @@ public class OrderController implements IResourceController<OrderDto> {
             role = DefaultRole.REGISTERED_USER)
     @RequestMapping(method = RequestMethod.POST, path = USER_ROOT_PATH)
     public ResponseEntity<EntityModel<OrderDto>> createOrder(@RequestBody OrderRequest orderRequest)
-            throws IllegalStateException {
-        try {
-            String user = authResolver.getUser();
-            Basket basket = basketService.find(user);
+            throws IllegalStateException, EntityInvalidException, EmptyBasketException {
+        String user = authResolver.getUser();
+        Basket basket = basketService.find(user);
 
-            Order order = orderService.createOrder(basket, orderRequest.getOnSuccessUrl());
-            return new ResponseEntity<>(toResource(OrderDto.fromOrder(order)), HttpStatus.CREATED);
-        } catch (EmptyBasketException e) {
-            // This not an error case
-            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
-        }
+        Order order = orderService.createOrder(basket, orderRequest.getLabel(), orderRequest.getOnSuccessUrl());
+        return new ResponseEntity<>(toResource(OrderDto.fromOrder(order)), HttpStatus.CREATED);
     }
 
     @ResourceAccess(description = "Retrieve specified order", role = DefaultRole.REGISTERED_USER)
@@ -244,8 +256,8 @@ public class OrderController implements IResourceController<OrderDto> {
         if (order == null) {
             throw new EntityNotFoundException(orderId.toString(), Order.class);
         }
-        response.addHeader(HttpHeaders.CONTENT_DISPOSITION,
-                           "attachment;filename=order_" + orderId + "_" + OffsetDateTime.now().toString() + ".zip");
+        response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=order_" + orderId + "_"
+                + OffsetDateTime.now().toString().replaceAll(" ", "-") + ".zip");
         response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
         List<OrderDataFile> availableFiles = new ArrayList<>(dataFileService.findAllAvailables(orderId));
         // No file available
@@ -254,8 +266,14 @@ public class OrderController implements IResourceController<OrderDto> {
         }
 
         // Stream the response
-        return new ResponseEntity<>(os -> orderService.downloadOrderCurrentZip(order.getOwner(), availableFiles, os),
-                HttpStatus.OK);
+        return new ResponseEntity<>(os -> {
+            try {
+                orderService.downloadOrderCurrentZip(order.getOwner(), availableFiles, os);
+            } catch (RuntimeException e) {
+                LOGGER.error(e.getMessage(), e);
+                throw e;
+            }
+        }, HttpStatus.OK);
     }
 
     @ResourceAccess(description = "Download a Metalink file containing all files", role = DefaultRole.REGISTERED_USER)
@@ -266,7 +284,8 @@ public class OrderController implements IResourceController<OrderDto> {
         if (order == null) {
             throw new EntityNotFoundException(orderId.toString(), Order.class);
         }
-        return createMetalinkDownloadResponse(orderId, response);
+        return createMetalinkDownloadResponse(order, response);
+
     }
 
     @ResourceAccess(description = "Download a metalink file containing all files granted by a token",
@@ -288,20 +307,55 @@ public class OrderController implements IResourceController<OrderDto> {
             throw new EntityNotFoundException(orderId.toString(), Order.class);
         }
 
-        return createMetalinkDownloadResponse(orderId, response);
+        return createMetalinkDownloadResponse(order, response);
     }
 
     /**
      * Fill Response headers and create streaming response
+     * @throws EntityNotFoundException
      */
-    private ResponseEntity<StreamingResponseBody> createMetalinkDownloadResponse(@PathVariable("orderId") Long orderId,
-            HttpServletResponse response) {
-        response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=order_" + orderId + "_"
-                + OffsetDateTime.now().toString() + ".metalink");
-        response.setContentType("application/metalink+xml");
-
-        // Stream the response
-        return new ResponseEntity<>(os -> orderService.downloadOrderMetalink(orderId, os), HttpStatus.OK);
+    private ResponseEntity<StreamingResponseBody> createMetalinkDownloadResponse(Order order,
+            HttpServletResponse response) throws EntityNotFoundException {
+        String error = null;
+        switch (order.getStatus()) {
+            case DELETED:
+            case REMOVED:
+                error = "Order is deleted";
+                break;
+            case EXPIRED:
+                error = "Order is expired since " + order.getExpirationDate().toString();
+                break;
+            case PENDING:
+                error = "Order is not ready yet. Files calculation pending.";
+                break;
+            case FAILED:
+                error = "Order creation failed.";
+                break;
+            case RUNNING:
+            case DONE:
+            case DONE_WITH_WARNING:
+            case PAUSED:
+            default:
+                // All those status allow metalink download
+                break;
+        }
+        if (error != null) {
+            final byte[] errorMessage = error.getBytes();
+            return new ResponseEntity<>(os -> os.write(errorMessage), HttpStatus.NOT_FOUND);
+        } else {
+            response.addHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=order_" + order.getId() + "_"
+                    + OffsetDateTime.now().toString() + ".metalink");
+            response.setContentType("application/metalink+xml");
+            // Stream the response
+            return new ResponseEntity<>(os -> {
+                try {
+                    orderService.downloadOrderMetalink(order.getId(), os);
+                } catch (RuntimeException e) {
+                    LOGGER.error(e.getMessage(), e);
+                    throw e;
+                }
+            }, HttpStatus.OK);
+        }
     }
 
     @Override

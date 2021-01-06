@@ -18,10 +18,11 @@
  */
 package fr.cnes.regards.microservices;
 
+import fr.cnes.regards.framework.microservice.annotation.MicroserviceInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-import fr.cnes.regards.framework.microservice.annotation.MicroserviceInfo;
 
 /**
  * Start microservice order
@@ -31,12 +32,14 @@ import fr.cnes.regards.framework.microservice.annotation.MicroserviceInfo;
 @MicroserviceInfo(name = "order", version = "2.0.0-SNAPSHOT")
 public class Application {
 
-    /**
-     * Microservice bootstrap method
-     * @param args microservice bootstrap arguments
-     */
-    public static void main(final String[] args) {
-        SpringApplication.run(Application.class, args); // NOSONAR
-    }
+    private static final Logger LOGGER = LoggerFactory.getLogger(Application.class);
 
+    public static void main(final String[] args) {
+        try {
+            SpringApplication.run(Application.class, args); // NOSONAR
+        } catch (RuntimeException e) {
+            LOGGER.error("Going to exit", e);
+            System.exit(1);
+        }
+    }
 }

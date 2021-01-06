@@ -18,15 +18,15 @@
  */
 package fr.cnes.regards.modules.order.service;
 
+import fr.cnes.regards.framework.urn.UniformResourceName;
+import fr.cnes.regards.modules.order.domain.Order;
+import fr.cnes.regards.modules.order.domain.OrderDataFile;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
-
-import fr.cnes.regards.framework.urn.UniformResourceName;
-import fr.cnes.regards.modules.order.domain.Order;
-import fr.cnes.regards.modules.order.domain.OrderDataFile;
 
 /**
  * OrderDataFile specific service (OrderDataFiles are detached entities from Order, DatasetTasks and FilesTasks)
@@ -56,6 +56,8 @@ public interface IOrderDataFileService {
      * @return {@link OrderDataFile}s
      */
     Iterable<OrderDataFile> save(Iterable<OrderDataFile> dataFiles);
+
+    void launchNextFilesTasks(Iterable<OrderDataFile> dataFiles);
 
     OrderDataFile load(Long dataFileId) throws NoSuchElementException;
 

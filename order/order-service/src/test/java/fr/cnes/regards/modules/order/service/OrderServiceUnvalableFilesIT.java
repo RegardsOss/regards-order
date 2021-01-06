@@ -18,12 +18,32 @@
  */
 package fr.cnes.regards.modules.order.service;
 
-import java.io.IOException;
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-
+import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
+import fr.cnes.regards.framework.module.rest.exception.EntityInvalidException;
+import fr.cnes.regards.framework.modules.jobs.dao.IJobInfoRepository;
+import fr.cnes.regards.framework.modules.jobs.domain.JobInfo;
+import fr.cnes.regards.framework.modules.jobs.domain.JobStatus;
+import fr.cnes.regards.framework.modules.jobs.service.IJobService;
+import fr.cnes.regards.framework.multitenant.IRuntimeTenantResolver;
+import fr.cnes.regards.framework.oais.urn.OAISIdentifier;
+import fr.cnes.regards.framework.security.role.DefaultRole;
+import fr.cnes.regards.framework.urn.DataType;
+import fr.cnes.regards.framework.urn.EntityType;
+import fr.cnes.regards.framework.urn.UniformResourceName;
+import fr.cnes.regards.modules.order.dao.IBasketRepository;
+import fr.cnes.regards.modules.order.dao.IOrderDataFileRepository;
+import fr.cnes.regards.modules.order.dao.IOrderRepository;
+import fr.cnes.regards.modules.order.domain.FileState;
+import fr.cnes.regards.modules.order.domain.Order;
+import fr.cnes.regards.modules.order.domain.OrderDataFile;
+import fr.cnes.regards.modules.order.domain.OrderStatus;
+import fr.cnes.regards.modules.order.domain.basket.Basket;
+import fr.cnes.regards.modules.order.domain.basket.BasketDatasetSelection;
+import fr.cnes.regards.modules.order.domain.basket.BasketDatedItemsSelection;
+import fr.cnes.regards.modules.order.domain.basket.BasketSelectionRequest;
+import fr.cnes.regards.modules.order.test.ServiceConfigurationWithFilesNotAvailable;
+import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
+import fr.cnes.regards.modules.project.domain.Project;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.FixMethodOrder;
@@ -45,30 +65,11 @@ import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
-import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
-import fr.cnes.regards.framework.modules.jobs.dao.IJobInfoRepository;
-import fr.cnes.regards.framework.modules.jobs.domain.JobInfo;
-import fr.cnes.regards.framework.modules.jobs.domain.JobStatus;
-import fr.cnes.regards.framework.modules.jobs.service.IJobService;
-import fr.cnes.regards.framework.multitenant.IRuntimeTenantResolver;
-import fr.cnes.regards.framework.oais.urn.OAISIdentifier;
-import fr.cnes.regards.framework.security.role.DefaultRole;
-import fr.cnes.regards.framework.urn.EntityType;
-import fr.cnes.regards.framework.urn.UniformResourceName;
-import fr.cnes.regards.modules.order.dao.IBasketRepository;
-import fr.cnes.regards.modules.order.dao.IOrderDataFileRepository;
-import fr.cnes.regards.modules.order.dao.IOrderRepository;
-import fr.cnes.regards.modules.order.domain.FileState;
-import fr.cnes.regards.modules.order.domain.Order;
-import fr.cnes.regards.modules.order.domain.OrderDataFile;
-import fr.cnes.regards.modules.order.domain.OrderStatus;
-import fr.cnes.regards.modules.order.domain.basket.Basket;
-import fr.cnes.regards.modules.order.domain.basket.BasketDatasetSelection;
-import fr.cnes.regards.modules.order.domain.basket.BasketDatedItemsSelection;
-import fr.cnes.regards.modules.order.domain.basket.BasketSelectionRequest;
-import fr.cnes.regards.modules.order.test.ServiceConfigurationWithFilesNotAvailable;
-import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
-import fr.cnes.regards.modules.project.domain.Project;
+import java.io.IOException;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 /**
  * @author oroussel
@@ -161,12 +162,16 @@ public class OrderServiceUnvalableFilesIT {
         return request;
     }
 
-    private BasketDatedItemsSelection createDatasetItemSelection(long filesSize, int filesCount, int objectsCount,
+    private BasketDatedItemsSelection createDatasetItemSelection(long filesSize, long filesCount, int objectsCount,
             String query) {
 
         BasketDatedItemsSelection item = new BasketDatedItemsSelection();
-        item.setFilesSize(filesSize);
-        item.setFilesCount(filesCount);
+        item.setFileTypeCount(DataType.RAWDATA.name()+"_ref", 0L);
+        item.setFileTypeSize(DataType.RAWDATA.name()+"_ref", 0L);
+        item.setFileTypeCount(DataType.RAWDATA.name()+"_!ref", filesCount);
+        item.setFileTypeSize(DataType.RAWDATA.name()+"_!ref", filesSize);
+        item.setFileTypeCount(DataType.RAWDATA.name(), filesCount);
+        item.setFileTypeSize(DataType.RAWDATA.name(), filesSize);
         item.setObjectsCount(objectsCount);
         item.setDate(OffsetDateTime.now());
         item.setSelectionRequest(createBasketSelectionRequest(query));
@@ -174,21 +179,25 @@ public class OrderServiceUnvalableFilesIT {
     }
 
     @Test
-    public void testBucketsJobswithUnavalableFiles() throws IOException, InterruptedException {
+    public void testBucketsJobswithUnavalableFiles() throws IOException, InterruptedException, EntityInvalidException {
         String user = "tulavu@qui.fr";
         Basket basket = new Basket(user);
         BasketDatasetSelection dsSelection = new BasketDatasetSelection();
         dsSelection.setDatasetIpid(DS1_IP_ID.toString());
         dsSelection.setDatasetLabel("DS");
         dsSelection.setObjectsCount(3);
-        dsSelection.setFilesCount(12);
-        dsSelection.setFilesSize(3_000_171l);
-        dsSelection.addItemsSelection(createDatasetItemSelection(3_000_171l, 12, 3, "ALL"));
+        dsSelection.setFileTypeCount(DataType.RAWDATA.name()+"_ref", 0L);
+        dsSelection.setFileTypeSize(DataType.RAWDATA.name()+"_ref", 0L);
+        dsSelection.setFileTypeCount(DataType.RAWDATA.name()+"_!ref", 12L);
+        dsSelection.setFileTypeSize(DataType.RAWDATA.name()+"_!ref", 3_000_171L);
+        dsSelection.setFileTypeCount(DataType.RAWDATA.name(), 12L);
+        dsSelection.setFileTypeSize(DataType.RAWDATA.name(), 3_000_171L);
+        dsSelection.addItemsSelection(createDatasetItemSelection(3_000_171L, 12, 3, "ALL"));
         basket.addDatasetSelection(dsSelection);
         basketRepos.save(basket);
 
-        Order order = orderService.createOrder(basket, "http://perdu.com");
-        Thread.sleep(5_000);
+        Order order = orderService.createOrder(basket, "perdu","http://perdu.com");
+        Thread.sleep(10_000);
         List<JobInfo> jobInfos = jobInfoRepo.findAllByStatusStatus(JobStatus.QUEUED);
         Assert.assertEquals(2, jobInfos.size());
 
@@ -214,7 +223,7 @@ public class OrderServiceUnvalableFilesIT {
         files.forEach(f -> f.setState(FileState.DOWNLOADED));
         orderDataFileService.save(files);
         // Act as true downloads
-        orderJobService.manageUserOrderJobInfos(user);
+        orderJobService.manageUserOrderStorageFilesJobInfos(user);
         // Re-wait a while to permit execution of last jobInfo
         Thread.sleep(10_000);
 

@@ -18,18 +18,6 @@
  */
 package fr.cnes.regards.modules.order.service;
 
-import java.time.OffsetDateTime;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Optional;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
-import javax.persistence.EntityNotFoundException;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
 import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
 import fr.cnes.regards.framework.feign.security.FeignSecurityManager;
 import fr.cnes.regards.framework.jpa.multitenant.transactional.MultitenantTransactional;
@@ -40,18 +28,27 @@ import fr.cnes.regards.modules.indexer.domain.summary.DocFilesSubSummary;
 import fr.cnes.regards.modules.indexer.domain.summary.DocFilesSummary;
 import fr.cnes.regards.modules.indexer.domain.summary.FilesSummary;
 import fr.cnes.regards.modules.order.dao.IBasketRepository;
-import fr.cnes.regards.modules.order.domain.basket.Basket;
-import fr.cnes.regards.modules.order.domain.basket.BasketDatasetSelection;
-import fr.cnes.regards.modules.order.domain.basket.BasketDatedItemsSelection;
-import fr.cnes.regards.modules.order.domain.basket.BasketSelectionRequest;
-import fr.cnes.regards.modules.order.domain.basket.DataTypeSelection;
+import fr.cnes.regards.modules.order.domain.basket.*;
 import fr.cnes.regards.modules.order.domain.exception.EmptyBasketException;
 import fr.cnes.regards.modules.order.domain.exception.EmptySelectionException;
+import fr.cnes.regards.modules.order.domain.process.ProcessDatasetDescription;
 import fr.cnes.regards.modules.search.client.IComplexSearchClient;
 import fr.cnes.regards.modules.search.client.ILegacySearchEngineClient;
 import fr.cnes.regards.modules.search.domain.ComplexSearchRequest;
 import fr.cnes.regards.modules.search.domain.SearchRequest;
 import fr.cnes.regards.modules.search.domain.plugin.SearchEngineMappings;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Service;
+
+import javax.persistence.EntityNotFoundException;
+import java.time.OffsetDateTime;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author oroussel
@@ -198,6 +195,29 @@ public class BasketService implements IBasketService {
         return basket;
     }
 
+    @Override
+    public Basket attachProcessing(
+            Basket basket,
+            Long datasetId,
+            @Nullable ProcessDatasetDescription desc
+    ) {
+        return basket.getDatasetSelections().stream()
+                .filter(ds -> ds.getId().equals(datasetId))
+                .findFirst()
+                .map(ds -> attachProcessToDatasetSelectionAndSaveBasket(basket, ds, desc))
+                .orElseThrow(() -> new EntityNotFoundException("Basket selection with id " + datasetId + " doesn't exist"));
+    }
+
+    private Basket attachProcessToDatasetSelectionAndSaveBasket(
+            Basket basket,
+            BasketDatasetSelection ds,
+            ProcessDatasetDescription desc
+    ) {
+        ds.setProcessDatasetDescription(desc);
+        Basket modified = repos.save(basket);
+        return modified;
+    }
+
     /**
      * Create dated items selection
      * @param selectionRequest opensearch request from which this selection is created
@@ -210,15 +230,14 @@ public class BasketService implements IBasketService {
         BasketDatedItemsSelection itemsSelection = new BasketDatedItemsSelection();
         itemsSelection.setSelectionRequest(selectionRequest);
         itemsSelection.setObjectsCount((int) subSummary.getDocumentsCount());
-        int filesCount = 0;
-        long filesSize = 0;
-        for (DataType fileType : DataTypeSelection.ALL.getFileTypes()) {
-            FilesSummary filesSummary = subSummary.getFileTypesSummaryMap().get(fileType.toString());
-            filesCount += filesSummary.getFilesCount();
-            filesSize += filesSummary.getFilesSize();
-        }
-        itemsSelection.setFilesCount(filesCount);
-        itemsSelection.setFilesSize(filesSize);
+        DataTypeSelection.ALL.getFileTypes().stream()
+            .map(DataType::toString)
+            .flatMap(ft -> Stream.of(ft, ft+"_ref", ft+"_!ref"))
+            .forEach(ft -> {
+                FilesSummary fs = subSummary.getFileTypesSummaryMap().get(ft);
+                itemsSelection.setFileTypeCount(ft, fs.getFilesCount());
+                itemsSelection.setFileTypeSize(ft, fs.getFilesSize());
+            });
         itemsSelection.setDate(selectionRequest.getSelectionDate());
         return itemsSelection;
     }
@@ -237,12 +256,13 @@ public class BasketService implements IBasketService {
         // Occurs only in tests
         if (curDsSelectionSubSummary == null) {
             datasetSelection.setObjectsCount(0);
-            datasetSelection.setFilesCount(0);
-            datasetSelection.setFilesSize(0);
         } else {
             datasetSelection.setObjectsCount((int) curDsSelectionSubSummary.getDocumentsCount());
-            datasetSelection.setFilesCount((int) curDsSelectionSubSummary.getFilesCount());
-            datasetSelection.setFilesSize(curDsSelectionSubSummary.getFilesSize());
+            curDsSelectionSubSummary.getFileTypesSummaryMap()
+                .forEach((fileType, fs) -> {
+                    datasetSelection.setFileTypeCount(fileType, fs.getFilesCount());
+                    datasetSelection.setFileTypeSize(fileType, fs.getFilesSize());
+                });
         }
     }
 
@@ -272,4 +292,5 @@ public class BasketService implements IBasketService {
         });
         return request;
     }
+
 }

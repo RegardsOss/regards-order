@@ -18,15 +18,13 @@
  */
 package fr.cnes.regards.modules.order.domain.dto;
 
+import fr.cnes.regards.modules.order.domain.Order;
+import fr.cnes.regards.modules.order.domain.OrderStatus;
+
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-
-import org.springframework.beans.BeanUtils;
-
-import fr.cnes.regards.modules.order.domain.DatasetTask;
-import fr.cnes.regards.modules.order.domain.Order;
-import fr.cnes.regards.modules.order.domain.OrderStatus;
+import java.util.stream.Collectors;
 
 /**
  * Order Dto used to avoid loading FilesTask and all files
@@ -37,6 +35,8 @@ public class OrderDto {
     private Long id;
 
     private String owner;
+
+    private String label;
 
     private OffsetDateTime creationDate;
 
@@ -56,6 +56,36 @@ public class OrderDto {
 
     private List<DatasetTaskDto> datasetTasks = new ArrayList<>();
 
+    public OrderDto() {}
+
+    public OrderDto(
+            Long id,
+            String owner,
+            String label,
+            OffsetDateTime creationDate,
+            OffsetDateTime expirationDate,
+            int percentCompleted,
+            int filesInErrorCount,
+            int availableFilesCount,
+            OrderStatus status,
+            OffsetDateTime statusDate,
+            boolean waitingForUser,
+            List<DatasetTaskDto> datasetTasks
+    ) {
+        this.id = id;
+        this.owner = owner;
+        this.label = label;
+        this.creationDate = creationDate;
+        this.expirationDate = expirationDate;
+        this.percentCompleted = percentCompleted;
+        this.filesInErrorCount = filesInErrorCount;
+        this.availableFilesCount = availableFilesCount;
+        this.status = status;
+        this.statusDate = statusDate;
+        this.waitingForUser = waitingForUser;
+        this.datasetTasks = datasetTasks;
+    }
+
     public Long getId() {
         return id;
     }
@@ -70,6 +100,14 @@ public class OrderDto {
 
     public void setOwner(String owner) {
         this.owner = owner;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public void setLabel(String label) {
+        this.label = label;
     }
 
     public OffsetDateTime getCreationDate() {
@@ -148,13 +186,18 @@ public class OrderDto {
      * Create OrderDto from Order
      */
     public static OrderDto fromOrder(Order order) {
-        OrderDto dto = new OrderDto();
-        BeanUtils.copyProperties(order, dto, "datasetTasks");
-        List<DatasetTaskDto> dsTaskDtos = new ArrayList<>();
-        for (DatasetTask dsTask : order.getDatasetTasks()) {
-            dsTaskDtos.add(DatasetTaskDto.fromDatasetTask(dsTask));
-        }
-        dto.setDatasetTasks(dsTaskDtos);
+        OrderDto dto = new OrderDto(
+            order.getId(), order.getOwner(), order.getLabel(),
+            order.getCreationDate(), order.getExpirationDate(),
+            order.getPercentCompleted(),
+            order.getFilesInErrorCount(),
+            order.getAvailableFilesCount(),
+            order.getStatus(), order.getStatusDate(),
+            order.isWaitingForUser(),
+            order.getDatasetTasks().stream()
+                .map(DatasetTaskDto::fromDatasetTask)
+                .collect(Collectors.toList())
+        );
         return dto;
     }
 }

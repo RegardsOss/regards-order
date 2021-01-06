@@ -18,23 +18,6 @@
  */
 package fr.cnes.regards.modules.order.rest;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
-import java.nio.charset.Charset;
-import java.time.OffsetDateTime;
-
-import javax.validation.Valid;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.hateoas.EntityModel;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RestController;
-
 import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
 import fr.cnes.regards.framework.gson.adapters.OffsetDateTimeAdapter;
 import fr.cnes.regards.framework.hateoas.IResourceController;
@@ -44,9 +27,22 @@ import fr.cnes.regards.framework.security.role.DefaultRole;
 import fr.cnes.regards.framework.utils.RsRuntimeException;
 import fr.cnes.regards.modules.order.domain.basket.Basket;
 import fr.cnes.regards.modules.order.domain.basket.BasketSelectionRequest;
+import fr.cnes.regards.modules.order.domain.dto.BasketDto;
 import fr.cnes.regards.modules.order.domain.exception.EmptyBasketException;
 import fr.cnes.regards.modules.order.domain.exception.EmptySelectionException;
+import fr.cnes.regards.modules.order.domain.process.ProcessDatasetDescription;
 import fr.cnes.regards.modules.order.service.IBasketService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.hateoas.EntityModel;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.time.OffsetDateTime;
 
 /**
  * Basket controller
@@ -55,11 +51,12 @@ import fr.cnes.regards.modules.order.service.IBasketService;
  */
 @RestController
 @RequestMapping(BasketController.ORDER_BASKET)
-public class BasketController implements IResourceController<Basket> {
+public class BasketController implements IResourceController<BasketDto> {
 
     public static final String SELECTION = "/selection";
 
     public static final String DATASET_DATASET_SELECTION_ID = "/dataset/{datasetSelectionId}";
+    public static final String DATASET_DATASET_SELECTION_ID_UPDATE_PROCESS = DATASET_DATASET_SELECTION_ID + "/updateProcessing";
 
     public static final String DATASET_DATASET_SELECTION_ID_ITEMS_SELECTION_DATE = "/dataset/{datasetSelectionId}/{itemsSelectionDate}";
 
@@ -81,11 +78,32 @@ public class BasketController implements IResourceController<Basket> {
      */
     @ResourceAccess(description = "Add a selection to the basket", role = DefaultRole.REGISTERED_USER)
     @RequestMapping(method = RequestMethod.POST, value = SELECTION)
-    public ResponseEntity<EntityModel<Basket>> addSelection(
+    public ResponseEntity<EntityModel<BasketDto>> addSelection(
             @Valid @RequestBody BasketSelectionRequest basketSelectionRequest) throws EmptySelectionException {
         String user = authResolver.getUser();
         Basket basket = basketService.findOrCreate(user);
-        return ResponseEntity.ok(toResource(basketService.addSelection(basket.getId(), basketSelectionRequest)));
+        basket = basketService.addSelection(basket.getId(), basketSelectionRequest);
+        BasketDto dto = BasketDto.makeBasketDto(basket);
+        return ResponseEntity.ok(toResource(dto));
+    }
+
+    /**
+     * Attach or remove a process description to the given dataset selection.
+     * @param dsSelectionId dataset selection id (from basket)
+     * @param description the optional description of the process; remove process desc if null
+     * @return updated basket
+     * @throws EmptyBasketException if no basket currently exists
+     */
+    @ResourceAccess(description = "Attach process description to dataset selection from basket", role = DefaultRole.REGISTERED_USER)
+    @RequestMapping(method = RequestMethod.PUT, path = DATASET_DATASET_SELECTION_ID_UPDATE_PROCESS)
+    public ResponseEntity<EntityModel<BasketDto>> attachProcessDescriptionToDatasetSelection(
+            @PathVariable("datasetSelectionId") Long dsSelectionId,
+            @RequestBody(required = false) ProcessDatasetDescription description
+    ) throws EmptyBasketException {
+        Basket basket = basketService.find(authResolver.getUser());
+        Basket modified = basketService.attachProcessing(basket, dsSelectionId, description);
+        BasketDto dto = BasketDto.makeBasketDto(modified);
+        return ResponseEntity.ok(toResource(dto));
     }
 
     /**
@@ -96,10 +114,12 @@ public class BasketController implements IResourceController<Basket> {
      */
     @ResourceAccess(description = "Remove dataset selection from basket", role = DefaultRole.REGISTERED_USER)
     @RequestMapping(method = RequestMethod.DELETE, value = DATASET_DATASET_SELECTION_ID)
-    public ResponseEntity<EntityModel<Basket>> removeDatasetSelection(
+    public ResponseEntity<EntityModel<BasketDto>> removeDatasetSelection(
             @PathVariable("datasetSelectionId") Long dsSelectionId) throws EmptyBasketException {
         Basket basket = basketService.find(authResolver.getUser());
-        return ResponseEntity.ok(toResource(basketService.removeDatasetSelection(basket, dsSelectionId)));
+        basket = basketService.removeDatasetSelection(basket, dsSelectionId);
+        BasketDto dto = BasketDto.makeBasketDto(basket);
+        return ResponseEntity.ok(toResource(dto));
     }
 
     /**
@@ -112,15 +132,16 @@ public class BasketController implements IResourceController<Basket> {
     @ResourceAccess(description = "Remove dated item selection under dataset selection from basket",
             role = DefaultRole.REGISTERED_USER)
     @RequestMapping(method = RequestMethod.DELETE, value = DATASET_DATASET_SELECTION_ID_ITEMS_SELECTION_DATE)
-    public ResponseEntity<EntityModel<Basket>> removeDatedItemsSelection(
+    public ResponseEntity<EntityModel<BasketDto>> removeDatedItemsSelection(
             @PathVariable("datasetSelectionId") Long dsSelectionId,
             @PathVariable("itemsSelectionDate") String itemsSelectionDateStr) throws EmptyBasketException {
         try {
             OffsetDateTime itemsSelectionDate = OffsetDateTimeAdapter
                     .parse(URLDecoder.decode(itemsSelectionDateStr, Charset.defaultCharset().toString()));
             Basket basket = basketService.find(authResolver.getUser());
-            return ResponseEntity
-                    .ok(toResource(basketService.removeDatedItemsSelection(basket, dsSelectionId, itemsSelectionDate)));
+            basket = basketService.removeDatedItemsSelection(basket, dsSelectionId, itemsSelectionDate);
+            BasketDto dto = BasketDto.makeBasketDto(basket);
+            return ResponseEntity.ok(toResource(dto));
         } catch (UnsupportedEncodingException e) {
             throw new RsRuntimeException(e);
         }
@@ -132,10 +153,11 @@ public class BasketController implements IResourceController<Basket> {
      */
     @ResourceAccess(description = "Get the basket", role = DefaultRole.REGISTERED_USER)
     @RequestMapping(method = RequestMethod.GET)
-    public ResponseEntity<EntityModel<Basket>> get() {
+    public ResponseEntity<EntityModel<BasketDto>> get() {
         try {
             Basket basket = basketService.find(authResolver.getUser());
-            return ResponseEntity.ok(toResource(basket));
+            BasketDto dto = BasketDto.makeBasketDto(basket);
+            return ResponseEntity.ok(toResource(dto));
         } catch (EmptyBasketException e) {
             // This is a normal case, no log needed
             return new ResponseEntity<>(HttpStatus.NO_CONTENT);
@@ -154,7 +176,7 @@ public class BasketController implements IResourceController<Basket> {
     }
 
     @Override
-    public EntityModel<Basket> toResource(Basket basket, Object... extras) {
+    public EntityModel<BasketDto> toResource(BasketDto basket, Object... extras) {
         return resourceService.toResource(basket);
     }
 }

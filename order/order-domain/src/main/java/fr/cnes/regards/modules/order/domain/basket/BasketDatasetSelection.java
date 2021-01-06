@@ -18,24 +18,15 @@
  */
 package fr.cnes.regards.modules.order.domain.basket;
 
+import fr.cnes.regards.framework.jpa.IIdentifiable;
+import fr.cnes.regards.modules.order.domain.process.ProcessDatasetDescription;
+import org.hibernate.annotations.SortNatural;
+import org.hibernate.annotations.Type;
+
+import javax.persistence.*;
+import java.util.Optional;
 import java.util.SortedSet;
 import java.util.TreeSet;
-
-import javax.persistence.CollectionTable;
-import javax.persistence.Column;
-import javax.persistence.ElementCollection;
-import javax.persistence.Entity;
-import javax.persistence.ForeignKey;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn;
-import javax.persistence.SequenceGenerator;
-import javax.persistence.Table;
-
-import org.hibernate.annotations.SortNatural;
-
-import fr.cnes.regards.framework.jpa.IIdentifiable;
 
 /**
  * A grouped items by dataset selection from a basket
@@ -61,16 +52,28 @@ public class BasketDatasetSelection implements IIdentifiable<Long>, Comparable<B
     private int objectsCount = 0;
 
     @Column(name = "files_count")
-    private int filesCount = 0;
+    private final long filesCount = 0;
 
     @Column(name = "files_size")
-    private long filesSize = 0;
+    private final long filesSize = 0;
+
+    @Type(type = "jsonb")
+    @Column(columnDefinition = "jsonb", name = "file_types_sizes")
+    private StringToLongMap fileTypesSizes;
+
+    @Type(type = "jsonb")
+    @Column(columnDefinition = "jsonb", name = "file_types_count")
+    private StringToLongMap fileTypesCount;
 
     @ElementCollection
     @CollectionTable(name = "t_basket_ds_item", joinColumns = @JoinColumn(name = "basket_dataset_id"),
             foreignKey = @ForeignKey(name = "fk_items_selection"))
     @SortNatural
     private final SortedSet<BasketDatedItemsSelection> itemsSelections = new TreeSet<>();
+
+    @Column(name = "process_dataset_desc")
+    @Type(type = "jsonb")
+    private ProcessDatasetDescription processDatasetDescription;
 
     @Override
     public Long getId() {
@@ -105,20 +108,38 @@ public class BasketDatasetSelection implements IIdentifiable<Long>, Comparable<B
         this.objectsCount = objectsCount;
     }
 
+    public long getFilesCount() {
+        return filesCount;
+    }
+
     public long getFilesSize() {
         return filesSize;
     }
 
-    public void setFilesSize(long filesSize) {
-        this.filesSize = filesSize;
+    public Long getFileTypeSize(String fileType) {
+        return Optional.ofNullable(fileTypesSizes)
+            .map(m -> m.getOrDefault(fileType, 0L))
+            .orElse(0L);
     }
 
-    public int getFilesCount() {
-        return filesCount;
+    public void setFileTypeSize(String fileType, Long filesSize) {
+        if (fileTypesSizes==null) {
+            fileTypesSizes = new StringToLongMap();
+        }
+        this.fileTypesSizes.put(fileType, filesSize);
     }
 
-    public void setFilesCount(int filesCount) {
-        this.filesCount = filesCount;
+    public Long getFileTypeCount(String fileType) {
+        return Optional.ofNullable(fileTypesCount)
+            .map(m -> m.getOrDefault(fileType, 0L))
+            .orElse(0L);
+    }
+
+    public void setFileTypeCount(String fileType, Long filesCount) {
+        if (fileTypesCount==null) {
+            fileTypesCount = new StringToLongMap();
+        }
+        this.fileTypesCount.put(fileType, filesCount);
     }
 
     public SortedSet<BasketDatedItemsSelection> getItemsSelections() {
@@ -131,6 +152,14 @@ public class BasketDatasetSelection implements IIdentifiable<Long>, Comparable<B
 
     public void removeItemsSelection(BasketDatedItemsSelection itemsSelection) {
         this.itemsSelections.remove(itemsSelection);
+    }
+
+    public ProcessDatasetDescription getProcessDatasetDescription() {
+        return processDatasetDescription;
+    }
+
+    public void setProcessDatasetDescription(ProcessDatasetDescription processDatasetDescription) {
+        this.processDatasetDescription = processDatasetDescription;
     }
 
     @Override
@@ -155,5 +184,9 @@ public class BasketDatasetSelection implements IIdentifiable<Long>, Comparable<B
     @Override
     public int hashCode() {
         return datasetIpid.hashCode();
+    }
+
+    public boolean hasProcessing() {
+        return this.processDatasetDescription != null;
     }
 }

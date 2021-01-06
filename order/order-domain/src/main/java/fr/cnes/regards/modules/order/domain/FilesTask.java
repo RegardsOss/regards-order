@@ -18,25 +18,24 @@
  */
 package fr.cnes.regards.modules.order.domain;
 
+import fr.cnes.regards.framework.modules.jobs.domain.LeafTask;
+
+import javax.persistence.*;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.ForeignKey;
-import javax.persistence.JoinColumn;
-import javax.persistence.NamedAttributeNode;
-import javax.persistence.NamedEntityGraph;
-import javax.persistence.OneToMany;
-import javax.persistence.PrimaryKeyJoinColumn;
-import javax.persistence.Table;
-
-import fr.cnes.regards.framework.modules.jobs.domain.LeafTask;
-
 /**
  * A sub-order task is a job that manage a set of data files.
+ *
+ * This task specifically monitors the life cycle of instances of OrderDataFiles,
+ * that is: files meant to be downloaded by the end user in the context of an order.
+ *
+ * This task has an internal state allowing to prevent the rest of the order
+ * to be processed. The "waitingForUser" flag means that no more StorageFilesJob
+ * will be run until the user has downloaded the available files.
+ *
  * Associated job calls
  * @author oroussel
  */
@@ -104,10 +103,6 @@ public class FilesTask extends LeafTask {
         return waitingForUser;
     }
 
-    public void setWaitingForUser(boolean waitingForUser) {
-        this.waitingForUser = waitingForUser;
-    }
-
     public String getOwner() {
         return owner;
     }
@@ -123,7 +118,9 @@ public class FilesTask extends LeafTask {
      */
     public void computeWaitingForUser() {
         Set<OrderDataFile> notInErrorFiles = files.stream()
-                .filter(f -> (f.getState() != FileState.ERROR) && (f.getState() != FileState.DOWNLOAD_ERROR))
+                .filter(f -> (f.getState() != FileState.ERROR)
+                        && (f.getState() != FileState.DOWNLOAD_ERROR)
+                        && (f.getState() != FileState.PROCESSING_ERROR))
                 .collect(Collectors.toSet());
         // Not in error nor download_error files are all available
         this.waitingForUser = !notInErrorFiles.isEmpty()

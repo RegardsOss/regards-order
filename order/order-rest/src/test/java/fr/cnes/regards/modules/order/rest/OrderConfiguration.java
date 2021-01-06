@@ -18,13 +18,20 @@
  */
 package fr.cnes.regards.modules.order.rest;
 
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-
+import com.google.common.collect.Maps;
+import feign.Request;
+import feign.Response;
+import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
+import fr.cnes.regards.modules.emails.client.IEmailClient;
+import fr.cnes.regards.modules.indexer.domain.summary.DocFilesSummary;
+import fr.cnes.regards.modules.model.client.IAttributeModelClient;
+import fr.cnes.regards.modules.model.client.IModelAttrAssocClient;
+import fr.cnes.regards.modules.order.service.processing.IProcessingEventSender;
+import fr.cnes.regards.modules.processing.client.IProcessingRestClient;
+import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
+import fr.cnes.regards.modules.search.client.IComplexSearchClient;
+import fr.cnes.regards.modules.search.client.ILegacySearchEngineClient;
+import fr.cnes.regards.modules.storage.client.IStorageRestClient;
 import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -33,19 +40,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.http.ResponseEntity;
 
-import com.google.common.collect.Maps;
-
-import feign.Request;
-import feign.Response;
-import fr.cnes.regards.framework.authentication.IAuthenticationResolver;
-import fr.cnes.regards.modules.emails.client.IEmailClient;
-import fr.cnes.regards.modules.indexer.domain.summary.DocFilesSummary;
-import fr.cnes.regards.modules.model.client.IAttributeModelClient;
-import fr.cnes.regards.modules.model.client.IModelAttrAssocClient;
-import fr.cnes.regards.modules.project.client.rest.IProjectsClient;
-import fr.cnes.regards.modules.search.client.IComplexSearchClient;
-import fr.cnes.regards.modules.search.client.ILegacySearchEngineClient;
-import fr.cnes.regards.modules.storage.client.IStorageRestClient;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @author oroussel
@@ -123,5 +123,15 @@ public class OrderConfiguration {
     @Bean
     public IEmailClient emailClient() {
         return Mockito.mock(IEmailClient.class);
+    }
+
+    @Bean
+    public IProcessingRestClient processingRestClient() {
+        return Mockito.mock(IProcessingRestClient.class);
+    }
+
+    @Bean
+    public IProcessingEventSender processingEventSender() {
+        return Mockito.mock(IProcessingEventSender.class);
     }
 }
